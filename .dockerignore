@@ -1,0 +1,28 @@
+# 通用排除
+.git
+.gitignore
+.project
+.claude
+docs
+LICENSE
+*.md
+!hub-server/config.example.yaml
+
+# 构建产物与依赖
+**/node_modules
+**/dist
+**/build
+**/*.out
+
+# 本地数据与日志
+*.db
+*.db-*
+*.log
+*.sqlite
+hub-server.db
+
+# 环境与密钥
+.env
+.env.*
+*.pem
+*.key

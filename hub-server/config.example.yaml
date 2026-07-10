@@ -1,0 +1,25 @@
+server:
+  address: ":8080"
+  public_base_url: "http://localhost:8080"
+database:
+  driver: "sqlite"
+  dsn: "hub-server.db"
+auth:
+  token_ttl: 24h
+  admin_username: "admin"
+  admin_password: "change-me"
+llm:
+  model: ""
+  api_base: ""
+  api_key: ""
+  proxy: ""
+cache:
+  default_strategy: "VERSIONED"
+  ttl: 1h
+limits:
+  request_body_bytes: 1048576
+  page_size_max: 100
+  expression_length: 20000
+  dependency_depth: 16
+logging:
+  level: "debug"

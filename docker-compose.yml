@@ -1,0 +1,67 @@
+# prompts-glue 容器编排
+#
+# MySQL 独立部署在外部实例 10.2.20.161:8080，库名 glue_db，不纳入本编排。
+# 启动前必须设置数据库账号:
+#   export GLUE_DB_USER=<账号>
+#   export GLUE_DB_PASSWORD=<密码>
+#   # 密码含特殊字符时需按 net/url 规则转义后再写入环境变量
+#
+# 启动全部服务:
+#   docker compose up -d --build
+#
+# 访问:
+#   后端 API:        http://localhost:8080
+#   用户端门户 web:  http://localhost:8081
+#   管理界面 manager: http://localhost:8082
+#
+# 修改管理员密码请调整 HUB_AUTH_ADMIN_PASSWORD，勿使用示例默认值。
+
+services:
+  hub-server:
+    build:
+      context: .
+      dockerfile: hub-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      HUB_DATABASE_DRIVER: mysql
+      HUB_DATABASE_DSN: "${GLUE_DB_USER:?请设置 GLUE_DB_USER}:${GLUE_DB_PASSWORD:?请设置 GLUE_DB_PASSWORD}@tcp(10.2.20.161:3306)/glue_db?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&readTimeout=30s&writeTimeout=30s"
+      HUB_AUTH_ADMIN_USERNAME: ${HUB_AUTH_ADMIN_USERNAME:-admin}
+      HUB_AUTH_ADMIN_PASSWORD: ${HUB_AUTH_ADMIN_PASSWORD:-change-me}
+      HUB_LOG_LEVEL: ${HUB_LOG_LEVEL:-info}
+      HUB_LLM_MODEL: ${HUB_LLM_MODEL:-}
+      HUB_LLM_API_BASE: ${HUB_LLM_API_BASE:-}
+      HUB_LLM_API_KEY: ${HUB_LLM_API_KEY:-}
+    ports:
+      - "10800:8080"
+    networks:
+      - glue
+
+  web:
+    build:
+      context: web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      hub-server:
+        condition: service_healthy
+    ports:
+      - "10801:80"
+    networks:
+      - glue
+
+  manager:
+    build:
+      context: manager
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      hub-server:
+        condition: service_healthy
+    ports:
+      - "10802:80"
+    networks:
+      - glue
+
+networks:
+  glue:
+    driver: bridge
