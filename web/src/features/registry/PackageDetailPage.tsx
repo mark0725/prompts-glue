@@ -262,7 +262,7 @@ export function PackageDetailPage() {
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {tab === "content" && (
                 content ? (
-                  <div className="prose prose-sm max-w-none text-foreground">
+                  <div className="markdown-body prose prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
                   </div>
                 ) : contentLoading ? (
