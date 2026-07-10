@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Copy, Download, Pencil } from "lucide-react";
+import { ChevronDown, Copy, Download, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "@/api";
@@ -13,7 +13,21 @@ import { cn } from "@/lib/cn";
 import { copyToClipboard } from "@/lib/clipboard";
 import type { ContentResponse, PackageDetail, VersionDetail, VersionEvent } from "@/types";
 
-type Tab = "content" | "deps" | "events";
+type Tab = "content" | "expression" | "deps" | "events";
+
+function packageFileName(name: string, version: string): string {
+  return `${name.replace(/[@/]/g, "-")}-${version}.json`;
+}
+
+function contentApiPath(name: string, version: string, query = ""): string {
+  const base = `/api/registry/packages/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/content`;
+  return query ? `${base}?${query}` : base;
+}
+
+function absoluteApiUrl(path: string): string {
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
 
 export function PackageDetailPage() {
   const { name = "" } = useParams();
@@ -27,11 +41,14 @@ export function PackageDetailPage() {
   const [contentLoading, setContentLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("content");
   const [loading, setLoading] = useState(true);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const downloadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setContent(null);
+    setDownloadOpen(false);
     api
       .package(decodedName)
       .then((result) => {
@@ -45,9 +62,28 @@ export function PackageDetailPage() {
     return () => { active = false; };
   }, [decodedName]);
 
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
+        setDownloadOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
   function loadVersion(selected: string) {
+    setDownloadOpen(false);
     api.version(decodedName, selected).then(setVersion).catch((e) => toast(e.message, "error"));
   }
+
+  // 切换版本时若当前 Tab 对类型不适用，回落到内容预览
+  useEffect(() => {
+    const isComposite = version?.package.type === "COMPOSITE" && !!version?.package.expression;
+    if (tab === "expression" && !isComposite) {
+      setTab("content");
+    }
+  }, [version?.package.type, version?.package.expression, tab]);
 
   // 自动加载版本内容（Markdown 预览）
   useEffect(() => {
@@ -63,7 +99,7 @@ export function PackageDetailPage() {
     return () => { active = false; };
   }, [decodedName, version?.package.version]);
 
-  function download() {
+  function loadContent() {
     if (!version) return;
     api.content(decodedName, version.package.version).then(setContent).catch((e) => toast(e.message, "error"));
   }
@@ -72,11 +108,22 @@ export function PackageDetailPage() {
     copyToClipboard(`glue add ${decodedName}`).then((ok) => ok ? toast("已复制安装命令", "success") : toast("复制失败", "error"));
   }
 
+  async function copyText(text: string, successMessage: string) {
+    const ok = await copyToClipboard(text);
+    toast(ok ? successMessage : "复制失败", ok ? "success" : "error");
+    if (ok) setDownloadOpen(false);
+  }
+
   if (loading) return <div className="p-10 text-center"><Spinner /></div>;
   if (!detail) return <Card className="p-10 text-center text-muted-foreground">未找到提示词包</Card>;
 
   const selectedVersion = version?.package.version ?? detail.latest_version ?? "";
   const deprecated = version?.package.status === "DEPRECATED";
+  const packageUrl = selectedVersion ? absoluteApiUrl(contentApiPath(decodedName, selectedVersion)) : "";
+  const rawContentUrl = selectedVersion ? absoluteApiUrl(contentApiPath(decodedName, selectedVersion, "format=raw")) : "";
+  const curlCommand = selectedVersion
+    ? `curl -sS -o ${packageFileName(decodedName, selectedVersion)} "${packageUrl}"`
+    : "";
 
   return (
     <div className="space-y-4">
@@ -105,14 +152,52 @@ export function PackageDetailPage() {
               {detail.versions[0]?.published_at && <span>· 最近发布 {detail.versions[0].published_at.slice(0, 10)}</span>}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={copyInstall}><Copy className="h-4 w-4" /> 安装命令</Button>
             {user && selectedVersion && (
               <Button variant="outline" size="sm" onClick={() => navigate(`/workbench?edit=${encodeURIComponent(decodedName)}&version=${selectedVersion}`)}>
                 <Pencil className="h-4 w-4" /> 编辑 / 升级版本
               </Button>
             )}
-            <Button size="sm" onClick={download} disabled={!version}><Download className="h-4 w-4" /> 下载内容</Button>
+            <div className="relative" ref={downloadRef}>
+              <Button size="sm" onClick={() => setDownloadOpen((open) => !open)} disabled={!selectedVersion}>
+                <Download className="h-4 w-4" /> 下载内容
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", downloadOpen && "rotate-180")} />
+              </Button>
+              {downloadOpen && selectedVersion && (
+                <div className="absolute right-0 z-[60] mt-1 w-[min(28rem,calc(100vw-2rem))] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl">
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-foreground">curl 下载提示词包</p>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                          onClick={() => copyText(curlCommand, "已复制 curl 命令")}
+                        >
+                          <Copy className="h-3.5 w-3.5" /> 复制
+                        </button>
+                      </div>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground">{curlCommand}</pre>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-foreground">提示内容 URL</p>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                          onClick={() => copyText(rawContentUrl, "已复制内容 URL")}
+                        >
+                          <Copy className="h-3.5 w-3.5" /> 复制
+                        </button>
+                      </div>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground">{rawContentUrl}</pre>
+                      <p className="text-[11px] text-muted-foreground">仅返回提示词正文（Markdown），不含 API 外壳与包元数据。</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </Card>
@@ -139,7 +224,7 @@ export function PackageDetailPage() {
       {/* 版本详情 */}
       {version && (
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          {/* 元信息 */}
+          {/* 元信息：仅短字段，长文本内容不放左侧 */}
           <Card className="h-fit p-4">
             <h2 className="mb-3 text-sm font-semibold text-foreground">版本信息</h2>
             <dl className="space-y-2 text-sm">
@@ -148,19 +233,30 @@ export function PackageDetailPage() {
               <Row k="状态" v={<Badge color={deprecated ? "yellow" : "green"}>{label("version_status", version.package.status)}</Badge>} />
               <Row k="发布者" v={version.published_by || "-"} />
               <Row k="发布时间" v={(version.published_at || "").slice(0, 16).replace("T", " ") || "-"} />
-              {version.package.expression && <Row k="表达式" v={<code className="text-xs">{version.package.expression}</code>} />}
             </dl>
           </Card>
 
-          {/* 内容/依赖/事件 */}
+          {/* 内容/表达式/依赖/事件 */}
           <Card className="flex min-h-[300px] flex-col">
             <div className="flex gap-1 border-b px-2">
-              {([["content", "内容预览"], ["deps", "依赖"], ["events", "事件"]] as const).map(([k, l]) => (
+              {([
+                ["content", "内容预览"],
+                ...(version.package.type === "COMPOSITE" && version.package.expression ? [["expression", "表达式"] as const] : []),
+                ["deps", "依赖"],
+                ["events", "事件"],
+              ] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} className={cn("border-b-2 px-3 py-2 text-sm font-medium transition-colors", tab === k ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{l}</button>
               ))}
               <div className="ml-auto flex items-center gap-1 p-1">
-                {content && <button onClick={() => copyToClipboard(content.content).then((ok) => ok && toast("已复制", "success"))} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="复制"><Copy className="h-4 w-4" /></button>}
-                {content && <a href={`data:text/plain;charset=utf-8,${encodeURIComponent(content.content)}`} download={`${decodedName}-${version.package.version}.md`} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="下载"><Download className="h-4 w-4" /></a>}
+                {tab === "content" && content && (
+                  <>
+                    <button onClick={() => copyToClipboard(content.content).then((ok) => ok && toast("已复制", "success"))} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="复制"><Copy className="h-4 w-4" /></button>
+                    <a href={`data:text/plain;charset=utf-8,${encodeURIComponent(content.content)}`} download={`${decodedName}-${version.package.version}.md`} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="下载"><Download className="h-4 w-4" /></a>
+                  </>
+                )}
+                {tab === "expression" && version.package.expression && (
+                  <button onClick={() => copyToClipboard(version.package.expression || "").then((ok) => ok && toast("已复制表达式", "success"))} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="复制表达式"><Copy className="h-4 w-4" /></button>
+                )}
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -173,9 +269,14 @@ export function PackageDetailPage() {
                   <div className="flex h-full items-center justify-center"><Spinner /></div>
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    <Button variant="outline" size="sm" onClick={download}><Download className="h-4 w-4" /> 加载内容</Button>
+                    <Button variant="outline" size="sm" onClick={loadContent}><Download className="h-4 w-4" /> 加载内容</Button>
                   </div>
                 )
+              )}
+              {tab === "expression" && (
+                version.package.expression ? (
+                  <pre className="overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/60 px-3 py-3 font-mono text-xs leading-relaxed text-foreground">{version.package.expression}</pre>
+                ) : <Empty text="无表达式" />
               )}
               {tab === "deps" && (
                 version.dependencies.length ? (

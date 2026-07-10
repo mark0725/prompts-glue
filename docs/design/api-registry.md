@@ -205,10 +205,24 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| format | 存储格式 | 否 | 返回 Markdown 包文件、JSON 结构或 YAML 元数据 |
+| format | 字符串 | 否 | 响应形态，见下表；默认 `json` |
+| view | 布尔值 | 否 | `true` 时仅预览，不累计下载统计 |
 | include_dependencies | 布尔值 | 否 | 是否同时返回依赖包信息 |
 
-响应数据为 Package 内容。CLI 的 `add` 和 `upgrade` 命令使用该接口获取包内容。
+`format` 取值：
+
+| 值 | 响应 | 说明 |
+|---|---|---|
+| `json` 或未提供 | 统一 API 外壳 + Package 内容对象 | 默认；CLI `add`/`upgrade` 与 Web 预览加载使用 |
+| `raw` | 纯文本正文 | `Content-Type: text/markdown; charset=utf-8`，仅返回 Markdown 提示内容体，不含 package 元数据与 API 外壳；Web「提示内容 URL」使用 |
+
+响应数据（`format=json`）为 Package 内容。CLI 的 `add` 和 `upgrade` 命令使用该接口获取包内容。
+
+`format=raw` 时：
+
+- 成功直接写出正文，不使用统一 JSON 外壳。
+- 失败仍返回统一错误 JSON，便于客户端识别。
+- 可与 `view=true` 组合：预览用 URL 不累计下载；curl 下载包使用默认 `format` 并计次。
 
 ## 发布接口
 

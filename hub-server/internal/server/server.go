@@ -180,9 +180,19 @@ func (s *Server) packageRoutes(w http.ResponseWriter, r *http.Request) {
 			if user != nil {
 				userID = user.ID
 			}
-					view := r.URL.Query().Get("view") == "true"
+			view := r.URL.Query().Get("view") == "true"
 			result, err := s.registry.Content(name, version, userID, r.RemoteAddr, r.UserAgent(), !view)
-			writeRegistryResult(w, r, result, err)
+			if err != nil {
+				writeRegistryResult(w, r, result, err)
+				return
+			}
+			if strings.EqualFold(r.URL.Query().Get("format"), "raw") {
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(result.Content))
+				return
+			}
+			writeRegistryResult(w, r, result, nil)
 			return
 		}
 		if len(parts) == 4 && parts[3] == "deprecate" && r.Method == http.MethodPost {

@@ -30,7 +30,7 @@
 |---|---|
 | 首页 | 展示搜索入口、推荐分类、最新发布和热门包 |
 | 搜索结果 | 按关键词、分类、标签、作者、状态、类型筛选提示词包 |
-| 包详情 | 展示包概要、版本列表、标签、分类、作者、下载统计 |
+| 包详情 | 展示包概要、版本列表、标签、分类、作者、下载统计；下载内容下拉提供 curl 包下载命令与正文 URL |
 | 版本详情 | 展示版本元数据、依赖、表达式、计算记录和内容预览 |
 | 提示词工作台 | 拼图/文本双视图构建、执行生成、依赖关系图与可开关的发布模式（合并原制作/实时生成/发布） |
 | 登录 | 登录远程服务并保存当前会话状态 |
@@ -131,7 +131,7 @@ flowchart TD
 | 搜索包 | `/api/registry/packages` |
 | 查看包概要 | `/api/registry/packages/{name}` |
 | 查看版本 | `/api/registry/packages/{name}/versions/{version}` |
-| 下载内容 | `/api/registry/packages/{name}/versions/{version}/content` |
+| 下载内容 | `/api/registry/packages/{name}/versions/{version}/content`（默认 JSON 包；`format=raw` 仅正文） |
 | 发布包 | `/api/registry/packages` |
 | 依赖解析 | `/api/registry/dependencies/resolve` |
 | 实时生成 | `/api/registry/generate` |
