@@ -6,6 +6,7 @@ import { useAuthStore } from "@/store/auth";
 import { useDictStore } from "@/store/dict";
 import { toast } from "@/store/feedback";
 import { Badge, Button, Card, Input, Modal, Spinner, Textarea } from "@/components/ui";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { Select } from "@/components/Select";
 import { cn } from "@/lib/cn";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -271,10 +272,18 @@ export function WorkbenchPage() {
       </div>
 
       {mode === "plain" ? (
-        /* 普通提示词：仅 Markdown 编辑器 */
-        <Card className="p-4 min-h-[70vh]">
-          <div className="mb-2 text-xs text-muted-foreground">提示词内容（Markdown）</div>
-          <Textarea rows={24} className="min-h-[60vh] resize-y text-sm" placeholder="输入提示词 Markdown 内容…" value={plainContent} onChange={(e) => setPlainContent(e.target.value)} />
+        /* 普通提示词：Markdown 所见即所得编辑器 */
+        <Card className="flex h-[calc(100dvh-8.5rem)] min-h-[460px] flex-col p-4">
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+            <div className="text-xs text-muted-foreground">提示词内容（Markdown 所见即所得）</div>
+            <div className="text-[11px] text-muted-foreground">支持标题、列表、代码块、表格等；左侧编辑，右侧实时预览</div>
+          </div>
+          <MarkdownEditor
+            value={plainContent}
+            onChange={setPlainContent}
+            placeholder={"输入提示词 Markdown 内容…\n\n## 示例\n- 支持 **加粗** / *斜体*\n- 列表、代码块、表格与链接"}
+            preview="live"
+          />
         </Card>
       ) : (
         /* 复合提示词：完整编辑器 */
