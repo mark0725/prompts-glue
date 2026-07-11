@@ -49,16 +49,22 @@
 | 作者 / 仓库 / 主页 | 包概要 | 链接可点击 |
 | 总下载量 | 包概要 | 统计数字 |
 | 复制安装命令 | — | 复制 `glue add <name>` 到剪贴板，Toast 反馈 |
+| 收藏 | 收藏关系 + 当前用户 | 收藏/取消收藏按钮，显示包级收藏总数；未登录引导登录 |
 | 下载内容 | 内容接口 + 当前选中版本 | 下拉面板，见「下载内容下拉」 |
 
 ## 下载内容下拉
 
-包头「下载内容」按钮展开下拉面板，按当前选中版本给出两种用法。未选中版本时按钮禁用。
+包头「下载内容」按钮展开下拉面板，给出两种用法。面板顶部可切换版本范围：
+
+| 版本范围 | 说明 |
+|---|---|
+| 当前版本 | 跟随版本选择器，固定到具体版本号 |
+| latest 最新版 | 始终解析为该包最新可用版本（`versions/latest`），新版本发布后无需改命令 |
 
 | 项 | 内容 | 交互 |
 |---|---|---|
-| curl 下载提示词包 | `curl -sS -o <包名>-<版本>.json "<内容接口 URL>"` | 展示完整命令，一键复制；指向当前版本 JSON 结构内容接口 |
-| 提示内容 URL | `<origin>/api/registry/packages/{name}/versions/{version}/content?format=raw` | 展示绝对 URL，一键复制；打开或请求后仅返回 Markdown 正文，不含 API 外壳与 package 元数据 |
+| curl 下载提示词包 | `curl -sS -o <包名>-<版本>.json "<内容接口 URL>"` | 展示完整命令，一键复制；指向所选范围的 JSON 结构内容接口 |
+| 提示内容 URL | `<origin>/api/registry/packages/{name}/versions/{版本或 latest}/content?format=raw` | 展示绝对 URL，一键复制；打开或请求后仅返回 Markdown 正文，不含 API 外壳与 package 元数据 |
 
 说明：
 

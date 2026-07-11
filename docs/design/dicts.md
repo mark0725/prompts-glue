@@ -114,6 +114,7 @@
 | PUBLISH | 发布提示词版本 |
 | DEPRECATE | 废弃提示词版本 |
 | GENERATE | 实时生成提示词 |
+| STAR | 收藏或取消收藏提示词包 |
 | CLEAR_CACHE | 清理缓存 |
 
 ## CLI 相关类型

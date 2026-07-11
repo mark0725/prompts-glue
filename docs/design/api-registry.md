@@ -92,6 +92,9 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 | GET | `/packages/{name}/versions/{version}/content` | 下载指定版本内容 |
 | POST | `/packages` | 发布新提示词包版本 |
 | POST | `/packages/{name}/versions/{version}/deprecate` | 废弃指定版本 |
+| POST | `/packages/{name}/star` | 收藏包（鉴权） |
+| DELETE | `/packages/{name}/star` | 取消收藏（鉴权） |
+| GET | `/my-stars` | 查看当前用户收藏的包（鉴权） |
 | POST | `/resolve` | 解析包名和版本规则 |
 | POST | `/dependencies/resolve` | 解析 expression 依赖图 |
 | POST | `/generate` | 根据 expression 实时生成提示词 |
@@ -156,10 +159,11 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 | author | 字符串 | 否 | 按作者筛选 |
 | status | 版本状态 | 否 | 按版本状态筛选 |
 | type | 提示词类型 | 否 | 按提示词类型筛选 |
+| sort | 字符串 | 否 | 排序：`updated`（最新，默认）/ `stars`（收藏）/ `downloads`（下载量）/ `references`（引用） |
 | page | 数值 | 否 | 页码 |
 | page_size | 数值 | 否 | 每页数量 |
 
-响应数据为分页结构，`items` 中每项包含包名、描述、最新版本、状态、分类、标签、作者和更新时间。
+响应数据为分页结构，`items` 中每项包含包名、描述、最新版本、状态、分类、标签、作者、更新时间、下载量、引用量（`reference_count`，被复合提示词引用的版本数）、收藏量（`star_count`）以及当前用户是否已收藏（`starred`）。
 
 ### 查看包概要
 
@@ -279,6 +283,46 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 | replacement | 字符串 | 否 | 建议替代包或版本 |
 
 废弃不会删除历史版本，也不破坏依赖该精确版本的可复现性。
+
+## 收藏（Star）接口
+
+收藏为包级关系（不区分版本）；同一用户对同一包只能收藏一次，可取消。
+
+### 收藏包
+
+| 项目 | 说明 |
+|---|---|
+| 方法 | POST |
+| 路径 | `/api/registry/packages/{name}/star` |
+| 认证 | 需要 |
+| 用途 | 收藏指定包，幂等 |
+
+### 取消收藏
+
+| 项目 | 说明 |
+|---|---|
+| 方法 | DELETE |
+| 路径 | `/api/registry/packages/{name}/star` |
+| 认证 | 需要 |
+| 用途 | 取消收藏，幂等 |
+
+收藏/取消收藏响应数据：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| star_count | 数值 | 是 | 该包最新收藏总数（包级聚合） |
+| starred | 布尔值 | 是 | 当前用户是否已收藏 |
+
+### 查看我的收藏
+
+| 项目 | 说明 |
+|---|---|
+| 方法 | GET |
+| 路径 | `/api/registry/my-stars` |
+| 认证 | 需要 |
+| 用途 | 分页查看当前用户收藏的包 |
+
+响应数据为分页结构，`items` 中每项为包概要（`starred` 恒为 `true`）。
 
 ## 解析接口
 

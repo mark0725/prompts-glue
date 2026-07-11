@@ -77,6 +77,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/api/registry/my-packages", s.requireAuth(http.HandlerFunc(s.myPackages)))
 	mux.Handle("/api/registry/my-generations", s.requireAuth(http.HandlerFunc(s.myGenerations)))
 	mux.Handle("/api/registry/my-namespaces", s.requireAuth(http.HandlerFunc(s.myNamespaces)))
+	mux.Handle("/api/registry/my-stars", s.requireAuth(http.HandlerFunc(s.myStars)))
 	mux.HandleFunc("/api/dicts", s.dictAll)
 	mux.HandleFunc("/api/dicts/", s.dictGroup)
 	mux.Handle("/api/admin/", s.requireAdmin(http.HandlerFunc(s.adminRoutes)))
@@ -126,7 +127,11 @@ func (s *Server) packages(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		page, pageSize := pageParams(r, s.cfg.Limits.PageSizeMax)
-		result, err := s.registry.Search(r.URL.Query().Get("q"), r.URL.Query().Get("category"), r.URL.Query().Get("tag"), r.URL.Query().Get("status"), r.URL.Query().Get("type"), page, pageSize)
+		userID := ""
+		if user := CurrentUser(r); user != nil {
+			userID = user.ID
+		}
+		result, err := s.registry.Search(r.URL.Query().Get("q"), r.URL.Query().Get("category"), r.URL.Query().Get("tag"), r.URL.Query().Get("status"), r.URL.Query().Get("type"), r.URL.Query().Get("sort"), userID, page, pageSize)
 		if err != nil {
 			api.WriteError(w, r, http.StatusInternalServerError, "SERVER_ERROR", err)
 			return
@@ -162,8 +167,38 @@ func (s *Server) packageRoutes(w http.ResponseWriter, r *http.Request) {
 			api.WriteError(w, r, http.StatusMethodNotAllowed, "INVALID_REQUEST", errors.New("method not allowed"))
 			return
 		}
-		result, err := s.registry.Package(parts[0])
+		userID := ""
+		if user := CurrentUser(r); user != nil {
+			userID = user.ID
+		}
+		result, err := s.registry.Package(parts[0], userID)
 		writeRegistryResult(w, r, result, err)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "star" {
+		user := CurrentUser(r)
+		if user == nil {
+			api.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", errors.New("authentication required"))
+			return
+		}
+		switch r.Method {
+		case http.MethodPost:
+			count, err := s.registry.Star(parts[0], user)
+			if err != nil {
+				api.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err)
+				return
+			}
+			api.WriteJSON(w, r, http.StatusOK, map[string]any{"star_count": count, "starred": true})
+		case http.MethodDelete:
+			count, err := s.registry.Unstar(parts[0], user)
+			if err != nil {
+				api.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err)
+				return
+			}
+			api.WriteJSON(w, r, http.StatusOK, map[string]any{"star_count": count, "starred": false})
+		default:
+			api.WriteError(w, r, http.StatusMethodNotAllowed, "INVALID_REQUEST", errors.New("method not allowed"))
+		}
 		return
 	}
 	if len(parts) >= 3 && parts[1] == "versions" {
@@ -310,6 +345,14 @@ func (s *Server) myPackages(w http.ResponseWriter, r *http.Request) {
 	user := CurrentUser(r)
 	page, pageSize := pageParams(r, s.cfg.Limits.PageSizeMax)
 	result, err := s.registry.MyPackages(user.ID, page, pageSize)
+	writeRegistryResult(w, r, result, err)
+}
+
+func (s *Server) myStars(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet { api.WriteError(w, r, http.StatusMethodNotAllowed, "INVALID_REQUEST", errors.New("method not allowed")); return }
+	user := CurrentUser(r)
+	page, pageSize := pageParams(r, s.cfg.Limits.PageSizeMax)
+	result, err := s.registry.MyStars(user.ID, page, pageSize)
 	writeRegistryResult(w, r, result, err)
 }
 

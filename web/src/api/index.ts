@@ -21,6 +21,7 @@ export interface SearchParams {
   tag?: string;
   status?: string;
   type?: string;
+  sort?: string;
   page?: number;
   page_size?: number;
 }
@@ -86,6 +87,12 @@ export const api = {
   dictGroup: (group: string) => request<import("@/types").DictItem[]>(`/api/dicts/${group}`),
   myPackages: (page = 1, pageSize = 20) =>
     request<Page<PackageSummary>>(`/api/registry/my-packages${buildQuery({ page, page_size: pageSize })}`),
+  myStars: (page = 1, pageSize = 20) =>
+    request<Page<PackageSummary>>(`/api/registry/my-stars${buildQuery({ page, page_size: pageSize })}`),
+  star: (name: string) =>
+    request<{ star_count: number; starred: boolean }>(`/api/registry/packages/${encodeURIComponent(name)}/star`, { method: "POST" }),
+  unstar: (name: string) =>
+    request<{ star_count: number; starred: boolean }>(`/api/registry/packages/${encodeURIComponent(name)}/star`, { method: "DELETE" }),
   myGenerations: (page = 1, pageSize = 20) =>
     request<Page<GenerationRecord>>(`/api/registry/my-generations${buildQuery({ page, page_size: pageSize })}`),
   myNamespaces: () => request<NamespaceSummary[]>("/api/registry/my-namespaces"),

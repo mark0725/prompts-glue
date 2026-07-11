@@ -9,6 +9,7 @@ import { useDictStore } from "@/store/dict";
 import { toast } from "@/store/feedback";
 import { Badge, Button, Card, Spinner } from "@/components/ui";
 import { Select } from "@/components/Select";
+import { StarButton } from "@/components/StarButton";
 import { cn } from "@/lib/cn";
 import { copyToClipboard } from "@/lib/clipboard";
 import type { ContentResponse, PackageDetail, VersionDetail, VersionEvent } from "@/types";
@@ -36,12 +37,15 @@ export function PackageDetailPage() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<PackageDetail | null>(null);
+  const [starred, setStarred] = useState(false);
+  const [starCount, setStarCount] = useState(0);
   const [version, setVersion] = useState<VersionDetail | null>(null);
   const [content, setContent] = useState<ContentResponse | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("content");
   const [loading, setLoading] = useState(true);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [versionScope, setVersionScope] = useState<"current" | "latest">("current");
   const downloadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,6 +58,8 @@ export function PackageDetailPage() {
       .then((result) => {
         if (!active) return;
         setDetail(result);
+        setStarred(!!result.starred);
+        setStarCount(result.star_count ?? 0);
         const target = result.latest_version ?? result.versions[0]?.version;
         if (target) api.version(decodedName, target).then(setVersion).catch(() => undefined);
       })
@@ -119,10 +125,12 @@ export function PackageDetailPage() {
 
   const selectedVersion = version?.package.version ?? detail.latest_version ?? "";
   const deprecated = version?.package.status === "DEPRECATED";
-  const packageUrl = selectedVersion ? absoluteApiUrl(contentApiPath(decodedName, selectedVersion)) : "";
-  const rawContentUrl = selectedVersion ? absoluteApiUrl(contentApiPath(decodedName, selectedVersion, "format=raw")) : "";
-  const curlCommand = selectedVersion
-    ? `curl -sS -o ${packageFileName(decodedName, selectedVersion)} "${packageUrl}"`
+  // 下载地址可指向当前选中版本或 latest（始终解析为最新可用版本）。
+  const downloadVersion = versionScope === "latest" ? "latest" : selectedVersion;
+  const packageUrl = downloadVersion ? absoluteApiUrl(contentApiPath(decodedName, downloadVersion)) : "";
+  const rawContentUrl = downloadVersion ? absoluteApiUrl(contentApiPath(decodedName, downloadVersion, "format=raw")) : "";
+  const curlCommand = downloadVersion
+    ? `curl -sS -o ${packageFileName(decodedName, downloadVersion)} "${packageUrl}"`
     : "";
 
   return (
@@ -153,6 +161,7 @@ export function PackageDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <StarButton name={decodedName} starred={starred} count={starCount} variant="outline" size="sm" onChange={(s, c) => { setStarred(s); setStarCount(c); }} />
             <Button variant="outline" size="sm" onClick={copyInstall}><Copy className="h-4 w-4" /> 安装命令</Button>
             {user && selectedVersion && (
               <Button variant="outline" size="sm" onClick={() => navigate(`/workbench?edit=${encodeURIComponent(decodedName)}&version=${selectedVersion}`)}>
@@ -167,6 +176,22 @@ export function PackageDetailPage() {
               {downloadOpen && selectedVersion && (
                 <div className="absolute right-0 z-[60] mt-1 w-[min(28rem,calc(100vw-2rem))] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl">
                   <div className="space-y-3">
+                    <div className="flex items-center gap-1 rounded-md border p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        className={cn("flex-1 rounded px-2 py-1 transition-colors", versionScope === "current" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}
+                        onClick={() => setVersionScope("current")}
+                      >
+                        当前版本{selectedVersion ? ` ${selectedVersion}` : ""}
+                      </button>
+                      <button
+                        type="button"
+                        className={cn("flex-1 rounded px-2 py-1 transition-colors", versionScope === "latest" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}
+                        onClick={() => setVersionScope("latest")}
+                      >
+                        latest 最新版
+                      </button>
+                    </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-medium text-foreground">curl 下载提示词包</p>

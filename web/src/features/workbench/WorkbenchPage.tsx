@@ -7,6 +7,7 @@ import { useDictStore } from "@/store/dict";
 import { toast } from "@/store/feedback";
 import { Badge, Button, Card, Input, Modal, Spinner, Textarea } from "@/components/ui";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { PackageNameInput } from "@/components/PackageNameInput";
 import { Select } from "@/components/Select";
 import { cn } from "@/lib/cn";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -29,6 +30,12 @@ function bumpVersion(v: string): string {
     return parts.join(".");
   }
   return v + ".1";
+}
+
+// 包名前缀：分类(小写) + 连字符；无分类时为空。
+function categoryPrefix(category?: string): string {
+  const c = (category ?? "").trim().toLowerCase();
+  return c ? `${c}-` : "";
 }
 
 // AST → 图形块：将解析后的表达式树映射为工作台的 Stage 列表
@@ -423,10 +430,19 @@ export function WorkbenchPage() {
                   <span className="text-muted-foreground">{isComposite ? "按表达式计算" : "人工文本"}</span>
                 </div>
                 <div className="grid gap-3">
-                  <Field label="包名"><Input value={pkg.name} onChange={(e) => setPkg({ ...pkg, name: e.target.value })} placeholder="my-prompt" /></Field>
+                  <Field label="分类"><Select value={pkg.category} onChange={(v) => {
+                    const oldP = categoryPrefix(pkg.category);
+                    const newP = categoryPrefix(v);
+                    const base = oldP && pkg.name.startsWith(oldP) ? pkg.name.slice(oldP.length) : (newP && pkg.name.startsWith(newP) ? pkg.name.slice(newP.length) : pkg.name);
+                    setPkg({ ...pkg, category: v, name: base ? newP + base : pkg.name });
+                  }} options={[{ value: "", label: "请选择" }, ...dictItems("prompt_category").map((i) => ({ value: i.value, label: i.label }))]} /></Field>
+                  <Field label="包名">{editName ? (
+                    <Input value={pkg.name} readOnly placeholder="包名" className="bg-muted/50 font-mono text-xs" />
+                  ) : (
+                    <PackageNameInput prefix={categoryPrefix(pkg.category)} value={pkg.name} onChange={(v) => setPkg({ ...pkg, name: v })} placeholder={pkg.category ? "名称" : "请先选择分类"} />
+                  )}</Field>
                   <Field label="版本"><Input value={pkg.version} onChange={(e) => setPkg({ ...pkg, version: e.target.value })} /></Field>
                   <Field label="说明"><Input value={pkg.description} onChange={(e) => setPkg({ ...pkg, description: e.target.value })} /></Field>
-                  <Field label="分类"><Select value={pkg.category} onChange={(v) => setPkg({ ...pkg, category: v })} options={[{ value: "", label: "请选择" }, ...dictItems("prompt_category").map((i) => ({ value: i.value, label: i.label }))]} /></Field>
                   <Field label="可见性"><Select value={pkg.visibility} onChange={(v) => setPkg({ ...pkg, visibility: v })} options={dictItems("visibility").map((i) => ({ value: i.value, label: i.label }))} /></Field>
                   <div>
                     <span className="mb-1 block text-xs text-muted-foreground">标签</span>

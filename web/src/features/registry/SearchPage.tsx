@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Download, Search, User, X } from "lucide-react";
+import { Download, Link as LinkIcon, Search, User, X } from "lucide-react";
 import { api } from "@/api";
 import { useDictStore } from "@/store/dict";
 import { toast } from "@/store/feedback";
 import { Badge, Input, Spinner } from "@/components/ui";
 import { Select } from "@/components/Select";
+import { StarButton } from "@/components/StarButton";
 import { cn } from "@/lib/cn";
 import type { PackageSummary } from "@/types";
 
 const PAGE_SIZE = 12;
 const SORTS = [
   { value: "updated", label: "最新" },
-  { value: "popular", label: "热门" },
+  { value: "stars", label: "收藏" },
   { value: "downloads", label: "下载量" },
+  { value: "references", label: "引用" },
 ];
 
 export function SearchPage() {
@@ -44,7 +46,7 @@ export function SearchPage() {
     loadingRef.current = true;
     if (append) setLoadingMore(true); else setLoading(true);
     const f = filterRef.current;
-    api.searchPackages({ q: f.q, category: f.category, type: f.type, page: p, page_size: PAGE_SIZE })
+    api.searchPackages({ q: f.q, category: f.category, type: f.type, sort: f.sort, page: p, page_size: PAGE_SIZE })
       .then((result) => {
         const newItems = result.items ?? [];
         setItems((prev) => append ? [...prev, ...newItems] : newItems);
@@ -188,7 +190,11 @@ export function SearchPage() {
                 </div>
                 <div className="mt-auto flex items-center justify-between pt-1 text-xs text-muted-foreground">
                   <span>{pkg.latest_version ? `最新 ${pkg.latest_version}` : "暂无版本"}</span>
-                  <span className="flex items-center gap-1"><Download className="h-3.5 w-3.5" /> {pkg.download_count}</span>
+                  <div className="flex items-center gap-3">
+                    <StarButton name={pkg.name} starred={!!pkg.starred} count={pkg.star_count} onChange={(s, c) => setItems((prev) => prev.map((it) => it.name === pkg.name ? { ...it, starred: s, star_count: c } : it))} />
+                    <span className="flex items-center gap-1" title="被复合提示词引用的次数"><LinkIcon className="h-3.5 w-3.5" /> {pkg.reference_count}</span>
+                    <span className="flex items-center gap-1"><Download className="h-3.5 w-3.5" /> {pkg.download_count}</span>
+                  </div>
                 </div>
               </Link>
             ))}

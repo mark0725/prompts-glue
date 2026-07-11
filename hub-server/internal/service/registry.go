@@ -113,6 +113,9 @@ type PackageSummary struct {
 	Author        string    `json:"author,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	DownloadCount int64     `json:"download_count"`
+	ReferenceCount int64    `json:"reference_count"`
+	StarCount     int64     `json:"star_count"`
+	Starred       bool      `json:"starred"`
 }
 
 type PackageDetail struct {
@@ -123,6 +126,8 @@ type PackageDetail struct {
 	Tags          []string         `json:"tags,omitempty"`
 	Category      string           `json:"category"`
 	Visibility    string           `json:"visibility"`
+	StarCount     int64            `json:"star_count"`
+	Starred       bool             `json:"starred"`
 }
 
 type VersionSummary struct {
@@ -179,7 +184,7 @@ func buildLLMExecutor(cfg config.Config) promptssdk.InstructionExecutor {
 	return executor
 }
 
-func (s *RegistryService) Search(q string, category string, tag string, status string, typ string, page int, pageSize int) (Page[PackageSummary], error) {
+func (s *RegistryService) Search(q string, category string, tag string, status string, typ string, sort string, userID string, page int, pageSize int) (Page[PackageSummary], error) {
 	if page < 1 {
 		page = 1
 	}
@@ -211,9 +216,12 @@ func (s *RegistryService) Search(q string, category string, tag string, status s
 		return Page[PackageSummary]{}, err
 	}
 	var packages []model.Package
-	if err := query.Distinct("packages.*").Order("packages.updated_at desc").Limit(pageSize).Offset((page - 1) * pageSize).Find(&packages).Error; err != nil {
+	if err := query.Distinct("packages.*").Order(searchOrderClause(sort)).Limit(pageSize).Offset((page - 1) * pageSize).Find(&packages).Error; err != nil {
 		return Page[PackageSummary]{}, err
 	}
+	starred := s.starredSet(userID, packageIDs(packages))
+	downloads := s.downloadCounts(packageIDs(packages))
+	references := s.referenceCounts(packageNames(packages))
 	items := make([]PackageSummary, 0, len(packages))
 	for _, pkg := range packages {
 		tags, _ := s.tags(pkg.ID)
@@ -224,12 +232,12 @@ func (s *RegistryService) Search(q string, category string, tag string, status s
 				latestStatus = version.Status
 			}
 		}
-		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: pkg.DownloadCount})
+		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: downloads[pkg.ID], ReferenceCount: references[pkg.Name], StarCount: pkg.StarCount, Starred: starred[pkg.ID]})
 	}
 	return Page[PackageSummary]{Items: items, Page: page, PageSize: pageSize, Total: total, HasMore: int64(page*pageSize) < total}, nil
 }
 
-func (s *RegistryService) Package(name string) (PackageDetail, error) {
+func (s *RegistryService) Package(name string, userID string) (PackageDetail, error) {
 	pkg, err := s.findPackage(name)
 	if err != nil {
 		return PackageDetail{}, err
@@ -243,7 +251,14 @@ func (s *RegistryService) Package(name string) (PackageDetail, error) {
 		outVersions = append(outVersions, VersionSummary{Version: v.Version, Status: v.Status, Type: v.Type, PublishedAt: v.PublishedAt, DeprecatedAt: v.DeprecatedAt})
 	}
 	tags, _ := s.tags(pkg.ID)
-	return PackageDetail{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Versions: outVersions, Tags: tags, Category: pkg.Category, Visibility: pkg.Visibility}, nil
+	starred := false
+	if userID != "" {
+		var star model.PackageStar
+		if s.db.Where("package_id = ? AND user_id = ?", pkg.ID, userID).First(&star).Error == nil {
+			starred = true
+		}
+	}
+	return PackageDetail{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Versions: outVersions, Tags: tags, Category: pkg.Category, Visibility: pkg.Visibility, StarCount: pkg.StarCount, Starred: starred}, nil
 }
 
 func (s *RegistryService) Version(name string, versionRule string) (VersionDetail, error) {
@@ -295,7 +310,7 @@ func (s *RegistryService) userName(userID string) string {
 }
 
 func (s *RegistryService) Content(name string, versionRule string, userID string, ip string, userAgent string, trackDownload bool) (ContentResponse, error) {
-	pkg, version, err := s.resolvePackageVersion(name, versionRule, false)
+	_, version, err := s.resolvePackageVersion(name, versionRule, false)
 	if err != nil {
 		return ContentResponse{}, err
 	}
@@ -305,7 +320,6 @@ func (s *RegistryService) Content(name string, versionRule string, userID string
 	}
 	if trackDownload {
 		_ = s.db.Create(&model.DownloadRecord{PackageVersionID: version.ID, UserID: userID, Channel: "URL", IPAddress: ip, UserAgent: userAgent}).Error
-		_ = s.db.Model(&pkg).UpdateColumn("download_count", gorm.Expr("download_count + ?", 1)).Error
 	}
 	detail, err := s.Version(name, version.Version)
 	if err != nil {
@@ -750,6 +764,176 @@ func toDepJSON(deps []promptssdk.DependencyRef) []map[string]any {
 
 // --- 用户维度查询 ---
 
+// searchOrderClause 根据排序键返回白名单化的 ORDER BY 子句。键为固定枚举，安全拼接。
+func searchOrderClause(sort string) string {
+	dl := "(SELECT COUNT(*) FROM download_records dr JOIN package_versions pv ON pv.id = dr.package_version_id WHERE pv.package_id = packages.id)"
+	ref := "(SELECT COUNT(*) FROM package_dependencies pd WHERE pd.dependency_package_name = packages.name)"
+	switch sort {
+	case "stars":
+		return "packages.star_count DESC, " + dl + " DESC, packages.updated_at DESC, packages.name"
+	case "downloads":
+		return dl + " DESC, packages.star_count DESC, packages.updated_at DESC, packages.name"
+	case "references":
+		return ref + " DESC, " + dl + " DESC, packages.updated_at DESC, packages.name"
+	default: // updated / 最新
+		return "packages.updated_at DESC, packages.name"
+	}
+}
+
+// packageIDs 提取包的 ID 列表，供批量查询收藏/下载状态使用。
+func packageIDs(packages []model.Package) []string {
+	out := make([]string, 0, len(packages))
+	for _, p := range packages {
+		out = append(out, p.ID)
+	}
+	return out
+}
+
+// packageNames 提取包名列表，供按名聚合引用数使用。
+func packageNames(packages []model.Package) []string {
+	out := make([]string, 0, len(packages))
+	for _, p := range packages {
+		out = append(out, p.Name)
+	}
+	return out
+}
+
+// downloadCounts 按包聚合各版本下载记录的总和，返回 packageID -> 下载总数。
+func (s *RegistryService) downloadCounts(ids []string) map[string]int64 {
+	out := map[string]int64{}
+	if len(ids) == 0 {
+		return out
+	}
+	type row struct {
+		PackageID string
+		Count     int64
+	}
+	var rows []row
+	s.db.Table("download_records").
+		Select("package_versions.package_id as package_id, count(*) as count").
+		Joins("JOIN package_versions ON package_versions.id = download_records.package_version_id").
+		Where("package_versions.package_id IN ?", ids).
+		Group("package_versions.package_id").
+		Scan(&rows)
+	for _, r := range rows {
+		out[r.PackageID] = r.Count
+	}
+	return out
+}
+
+// referenceCounts 按包名聚合被复合提示词引用的次数（distinct 引用方版本数），返回 包名 -> 引用数。
+func (s *RegistryService) referenceCounts(names []string) map[string]int64 {
+	out := map[string]int64{}
+	if len(names) == 0 {
+		return out
+	}
+	type row struct {
+		Name  string
+		Count int64
+	}
+	var rows []row
+	s.db.Table("package_dependencies").
+		Select("dependency_package_name as name, count(distinct package_version_id) as count").
+		Where("dependency_package_name IN ?", names).
+		Group("dependency_package_name").
+		Scan(&rows)
+	for _, r := range rows {
+		out[r.Name] = r.Count
+	}
+	return out
+}
+
+// starredSet 查询当前用户对给定包集合中已收藏的包 ID，返回集合映射。userID 为空时返回空集。
+func (s *RegistryService) starredSet(userID string, ids []string) map[string]bool {
+	out := map[string]bool{}
+	if userID == "" || len(ids) == 0 {
+		return out
+	}
+	var stars []model.PackageStar
+	s.db.Where("user_id = ? AND package_id IN ?", userID, ids).Find(&stars)
+	for _, st := range stars {
+		out[st.PackageID] = true
+	}
+	return out
+}
+
+// Star 收藏包；同一用户对同一包仅计一次（唯一索引保证幂等）。
+func (s *RegistryService) Star(name string, user *model.User) (int64, error) {
+	if user == nil {
+		return 0, errors.New("authentication required")
+	}
+	pkg, err := s.findPackage(name)
+	if err != nil {
+		return 0, err
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var existing model.PackageStar
+		if err := tx.Where("package_id = ? AND user_id = ?", pkg.ID, user.ID).First(&existing).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			// 未收藏：插入。并发下若唯一索引冲突，视为已收藏。
+			if err := tx.Create(&model.PackageStar{PackageID: pkg.ID, UserID: user.ID}).Error; err != nil {
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return s.syncStarCount(pkg.ID), nil
+}
+
+// Unstar 取消收藏；幂等。
+func (s *RegistryService) Unstar(name string, user *model.User) (int64, error) {
+	if user == nil {
+		return 0, errors.New("authentication required")
+	}
+	pkg, err := s.findPackage(name)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.db.Where("package_id = ? AND user_id = ?", pkg.ID, user.ID).Delete(&model.PackageStar{}).Error; err != nil {
+		return 0, err
+	}
+	return s.syncStarCount(pkg.ID), nil
+}
+
+// syncStarCount 按实际收藏行数重算并回写包的 star_count，返回最新值，避免缓存计数漂移。
+func (s *RegistryService) syncStarCount(packageID string) int64 {
+	var n int64
+	s.db.Model(&model.PackageStar{}).Where("package_id = ?", packageID).Count(&n)
+	s.db.Model(&model.Package{}).Where("id = ?", packageID).UpdateColumn("star_count", n)
+	return n
+}
+
+// MyStars 返回当前用户收藏的包列表。
+func (s *RegistryService) MyStars(userID string, page, pageSize int) (Page[PackageSummary], error) {
+	if page < 1 { page = 1 }
+	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax { pageSize = s.cfg.Limits.PageSizeMax }
+	var total int64
+	s.db.Model(&model.PackageStar{}).Where("user_id = ?", userID).Count(&total)
+	var packages []model.Package
+	s.db.Joins("JOIN package_stars ON package_stars.package_id = packages.id").
+		Where("package_stars.user_id = ?", userID).
+		Order("packages.updated_at desc").
+		Limit(pageSize).Offset((page - 1) * pageSize).Find(&packages)
+	items := make([]PackageSummary, 0, len(packages))
+	downloads := s.downloadCounts(packageIDs(packages))
+	references := s.referenceCounts(packageNames(packages))
+	for _, pkg := range packages {
+		tags, _ := s.tags(pkg.ID)
+		latestStatus := ""
+		if pkg.LatestVersion != "" {
+			var v model.PackageVersion
+			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil { latestStatus = v.Status }
+		}
+		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: downloads[pkg.ID], ReferenceCount: references[pkg.Name], StarCount: pkg.StarCount, Starred: true})
+	}
+	return Page[PackageSummary]{Items: items, Page: page, PageSize: pageSize, Total: total, HasMore: int64(page*pageSize) < total}, nil
+}
+
 func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[PackageSummary], error) {
 	if page < 1 { page = 1 }
 	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax { pageSize = s.cfg.Limits.PageSizeMax }
@@ -758,6 +942,8 @@ func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[Pa
 	var packages []model.Package
 	s.db.Where("owner_user_id = ? AND deleted_at IS NULL", userID).Order("updated_at desc").Limit(pageSize).Offset((page - 1) * pageSize).Find(&packages)
 	items := make([]PackageSummary, 0, len(packages))
+	pkgDownloads := s.downloadCounts(packageIDs(packages))
+	pkgReferences := s.referenceCounts(packageNames(packages))
 	for _, pkg := range packages {
 		tags, _ := s.tags(pkg.ID)
 		latestStatus := ""
@@ -765,7 +951,7 @@ func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[Pa
 			var v model.PackageVersion
 			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil { latestStatus = v.Status }
 		}
-		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: pkg.DownloadCount})
+		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: pkgDownloads[pkg.ID], ReferenceCount: pkgReferences[pkg.Name]})
 	}
 	return Page[PackageSummary]{Items: items, Page: page, PageSize: pageSize, Total: total, HasMore: int64(page*pageSize) < total}, nil
 }

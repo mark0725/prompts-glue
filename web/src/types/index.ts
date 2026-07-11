@@ -77,6 +77,9 @@ export interface PackageSummary {
   author?: string;
   updated_at: string;
   download_count: number;
+  reference_count: number;
+  star_count: number;
+  starred?: boolean;
 }
 
 export interface VersionSummary {
@@ -95,6 +98,8 @@ export interface PackageDetail {
   tags?: string[];
   category: string;
   visibility: string;
+  star_count: number;
+  starred?: boolean;
 }
 
 export interface VersionEvent {

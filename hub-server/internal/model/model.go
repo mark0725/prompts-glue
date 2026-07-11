@@ -58,7 +58,7 @@ type Package struct {
 	Visibility    string `gorm:"index;size:32;not null" json:"visibility"`
 	LatestVersion string `gorm:"size:64" json:"latest_version,omitempty"`
 	OwnerUserID   string `gorm:"index;size:36;not null" json:"owner_user_id"`
-	DownloadCount int64  `json:"download_count"`
+	StarCount     int64  `gorm:"index" json:"star_count"`
 }
 
 type PackageVersion struct {
@@ -207,6 +207,13 @@ type DownloadRecord struct {
 	IPAddress        string    `gorm:"size:64" json:"ip_address,omitempty"`
 	UserAgent        string    `gorm:"size:512" json:"user_agent,omitempty"`
 	CreatedAt        time.Time `gorm:"index" json:"created_at"`
+}
+
+// PackageStar 记录用户对包的收藏关系；同一用户对同一包仅一条（复合唯一索引保证）。
+type PackageStar struct {
+	Base
+	PackageID string `gorm:"uniqueIndex:idx_star_user_pkg;index;size:36;not null" json:"package_id"`
+	UserID    string `gorm:"uniqueIndex:idx_star_user_pkg;index;size:36;not null" json:"user_id"`
 }
 
 type RiskMark struct {

@@ -8,7 +8,7 @@ import { Badge, Button, Card, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { GenerationRecord, NamespaceSummary, PackageSummary } from "@/types";
 
-type Tab = "packages" | "namespaces" | "history" | "prefs";
+type Tab = "packages" | "stars" | "namespaces" | "history" | "prefs";
 
 export function UserspacePage() {
   const { user, logout } = useAuthStore();
@@ -21,6 +21,7 @@ export function UserspacePage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "packages", label: "我发布的" },
+    { key: "stars", label: "我的收藏" },
     { key: "namespaces", label: "我的命名空间" },
     { key: "history", label: "生成历史" },
     { key: "prefs", label: "偏好设置" },
@@ -56,6 +57,7 @@ export function UserspacePage() {
 
       <Card className="p-4 min-h-[300px]">
         {tab === "packages" && <MyPackages label={label} />}
+        {tab === "stars" && <MyStars label={label} />}
         {tab === "namespaces" && <MyNamespaces label={label} />}
         {tab === "history" && <MyHistory />}
         {tab === "prefs" && <Prefs />}
@@ -75,7 +77,7 @@ function MyPackages({ label }: { label: (group: string, value?: string) => strin
   return (
     <table className="w-full text-sm">
       <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-        <tr><th className="px-3 py-2">包名</th><th className="px-3 py-2">分类</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">最新版本</th><th className="px-3 py-2 text-right">下载</th></tr>
+        <tr><th className="px-3 py-2">包名</th><th className="px-3 py-2">分类</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">最新版本</th><th className="px-3 py-2 text-right">引用</th><th className="px-3 py-2 text-right">下载</th></tr>
       </thead>
       <tbody>
         {items.map((p) => (
@@ -84,6 +86,36 @@ function MyPackages({ label }: { label: (group: string, value?: string) => strin
             <td className="px-3 py-2">{label("prompt_category", p.category)}</td>
             <td className="px-3 py-2"><Badge color={p.status === "DEPRECATED" ? "yellow" : "green"}>{label("version_status", p.status)}</Badge></td>
             <td className="px-3 py-2 text-xs">{p.latest_version || "-"}</td>
+            <td className="px-3 py-2 text-right text-xs">{p.reference_count}</td>
+            <td className="px-3 py-2 text-right text-xs">{p.download_count}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function MyStars({ label }: { label: (group: string, value?: string) => string }) {
+  const [items, setItems] = useState<PackageSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    api.myStars(1, 50).then((r) => setItems(r.items ?? [])).catch((e) => toast(e.message, "error")).finally(() => setLoading(false));
+  }, []);
+  if (loading) return <div className="p-6 text-center"><Spinner /></div>;
+  if (items.length === 0) return <Empty text="还没有收藏的提示词包" />;
+  return (
+    <table className="w-full text-sm">
+      <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+        <tr><th className="px-3 py-2">包名</th><th className="px-3 py-2">分类</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">最新版本</th><th className="px-3 py-2 text-right">引用</th><th className="px-3 py-2 text-right">下载</th></tr>
+      </thead>
+      <tbody>
+        {items.map((p) => (
+          <tr key={p.name} className="border-b border-border/60 hover:bg-muted/40">
+            <td className="px-3 py-2"><Link to={`/packages/${encodeURIComponent(p.name)}`} className="font-mono text-xs text-primary hover:underline">{p.name}</Link></td>
+            <td className="px-3 py-2">{label("prompt_category", p.category)}</td>
+            <td className="px-3 py-2"><Badge color={p.status === "DEPRECATED" ? "yellow" : "green"}>{label("version_status", p.status)}</Badge></td>
+            <td className="px-3 py-2 text-xs">{p.latest_version || "-"}</td>
+            <td className="px-3 py-2 text-right text-xs">{p.reference_count}</td>
             <td className="px-3 py-2 text-right text-xs">{p.download_count}</td>
           </tr>
         ))}
