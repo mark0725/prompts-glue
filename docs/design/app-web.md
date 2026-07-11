@@ -67,12 +67,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[输入 expression] --> B[选择缓存策略]
-    B --> C[提交生成]
-    C --> D[后端解析依赖并运行]
-    D --> E[展示内容]
-    E --> F[展示依赖、缓存、token 和警告]
+    A[输入 expression] --> B[提交生成]
+    B --> C[后端解析依赖并运行]
+    C --> D[展示内容]
+    D --> E[展示依赖、缓存、token 和警告]
 ```
+
+缓存策略由服务端配置统一决定，不在生成界面选择。
 
 ## 数据来源
 

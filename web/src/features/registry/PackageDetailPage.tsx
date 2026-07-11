@@ -330,8 +330,9 @@ function EventTimeline({ events }: { events: VersionEvent[] }) {
             {i < events.length - 1 && <span className="w-px flex-1 bg-border" />}
           </div>
           <div className="pb-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-foreground">{EVENT_LABEL[ev.event_type] || ev.event_type}</span>
+              {ev.version && <Badge color="blue">{ev.version}</Badge>}
               {ev.actor_name && <span className="text-xs text-muted-foreground">{ev.actor_name}</span>}
             </div>
             {ev.message && <p className="text-xs text-muted-foreground">{ev.message}</p>}

@@ -14,7 +14,7 @@
 #   用户端门户 web:  http://localhost:8081
 #   管理界面 manager: http://localhost:8082
 #
-# 修改管理员密码请调整 HUB_AUTH_ADMIN_PASSWORD，勿使用示例默认值。
+# 修改管理员密码请调整 HUB_AUTH__ADMIN_PASSWORD，勿使用示例默认值。
 
 services:
   hub-server:
@@ -23,14 +23,14 @@ services:
       dockerfile: hub-server/Dockerfile
     restart: unless-stopped
     environment:
-      HUB_DATABASE_DRIVER: mysql
-      HUB_DATABASE_DSN: "${GLUE_DB_USER:?请设置 GLUE_DB_USER}:${GLUE_DB_PASSWORD:?请设置 GLUE_DB_PASSWORD}@tcp(10.2.20.161:3306)/glue_db?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&readTimeout=30s&writeTimeout=30s"
-      HUB_AUTH_ADMIN_USERNAME: ${HUB_AUTH_ADMIN_USERNAME:-admin}
-      HUB_AUTH_ADMIN_PASSWORD: ${HUB_AUTH_ADMIN_PASSWORD:-change-me}
-      HUB_LOG_LEVEL: ${HUB_LOG_LEVEL:-info}
-      HUB_LLM_MODEL: ${HUB_LLM_MODEL:-}
-      HUB_LLM_API_BASE: ${HUB_LLM_API_BASE:-}
-      HUB_LLM_API_KEY: ${HUB_LLM_API_KEY:-}
+      HUB_DATABASE__DRIVER: mysql
+      HUB_DATABASE__DSN: "${GLUE_DB_USER:?请设置 GLUE_DB_USER}:${GLUE_DB_PASSWORD:?请设置 GLUE_DB_PASSWORD}@tcp(10.2.20.161:3306)/glue_db?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&readTimeout=30s&writeTimeout=30s"
+      HUB_AUTH__ADMIN_USERNAME: ${HUB_AUTH__ADMIN_USERNAME:-admin}
+      HUB_AUTH__ADMIN_PASSWORD: ${HUB_AUTH__ADMIN_PASSWORD:-change-me}
+      HUB_LOGGING__LEVEL: ${HUB_LOGGING__LEVEL:-info}
+      HUB_LLM__MODEL: ${HUB_LLM__MODEL:-}
+      HUB_LLM__API_BASE: ${HUB_LLM__API_BASE:-}
+      HUB_LLM__API_KEY: ${HUB_LLM__API_KEY:-}
     ports:
       - "10800:8080"
     networks:

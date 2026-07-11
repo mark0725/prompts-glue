@@ -62,7 +62,7 @@ func (s *Service) Login(username string, password string) (string, time.Time, mo
 	if err != nil {
 		return "", time.Time{}, model.User{}, err
 	}
-	expires := time.Now().UTC().Add(s.cfg.Auth.TokenTTL)
+	expires := time.Now().UTC().Add(time.Duration(s.cfg.Auth.TokenTTL))
 	access := model.AccessToken{UserID: user.ID, TokenHash: tokenHash, Name: "login", ExpiresAt: &expires}
 	if err := s.db.Create(&access).Error; err != nil {
 		return "", time.Time{}, model.User{}, err

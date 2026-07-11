@@ -1,3 +1,8 @@
+# hub-server 配置示例。文件格式按扩展名识别：.yaml/.yml、.json、.toml 均可
+# （TOML 用 [section] 表，JSON 用根对象；字段名与本文件一致）。
+# 所有字段均可通过环境变量（HUB_ 前缀，__ 表示层级，如 HUB_LLM__MODEL）
+# 或命令行参数（横杠表示层级，如 --llm-model）覆盖。
+# 优先级：命令行参数 > 环境变量 > 配置文件 > 代码默认值。
 server:
   address: ":8080"
   public_base_url: "http://localhost:8080"

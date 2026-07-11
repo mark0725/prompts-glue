@@ -18,7 +18,7 @@ func TestHealthLoginAndDicts(t *testing.T) {
 	cfg := config.Default()
 	cfg.Database.DSN = ":memory:"
 	cfg.Auth.AdminPassword = "secret-pass"
-	cfg.Auth.TokenTTL = time.Hour
+	cfg.Auth.TokenTTL = config.Duration(time.Hour)
 	db, err := database.Open(cfg)
 	if err != nil {
 		t.Fatal(err)

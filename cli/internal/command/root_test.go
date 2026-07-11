@@ -3,6 +3,8 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +76,20 @@ func TestCreatePlainPackageAndInfo(t *testing.T) {
 
 func TestCreateCompositePackageUsesSDK(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("GLUE_HOME", home)
 	repo := filepath.Join(home, "repository")
+
+	// 模拟 OpenAI 兼容的 LLM 服务，避免依赖真实网络。
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": "组合后的内容"}}},
+			"usage":   map[string]int{"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+		})
+	}))
+	defer server.Close()
+	t.Setenv("GLUE_LLM__MODEL", "test-model")
+	t.Setenv("GLUE_LLM__API_BASE", server.URL)
+
 	_, err := executeCommand("--local", "--repository", repo,
 		"create",
 		"--name", "base-rules",
@@ -93,7 +108,7 @@ func TestCreateCompositePackageUsesSDK(t *testing.T) {
 		"--version", "1.0.0",
 		"--description", "组合规则",
 		"--category", "DEV",
-		"--expression", `base-rules | template("补充内容"){"{{content}}"}`,
+		"--expression", `base-rules | template("补充内容"){按模板输出}`,
 	)
 	if err != nil {
 		t.Fatalf("create composite returned error: %v", err)

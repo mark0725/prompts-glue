@@ -23,7 +23,7 @@ prompts builder for claude-code, codex, opencode
 - 普通提示词：在用户界面或 CLI 中编辑并发布，发布后可搜索和下载。
 - 复合提示词：通过表达式组合已有提示词、文本片段和制作指令。
 - 实时提示词：通过 API 提交表达式并即时返回生成结果。
-- 提示词制作指令包括汇总、提取关键词、标签、标注、摘要、合并、标题、要点、清洗、去重、主题、大纲、导语、问题、要素抽取和模板等。
+- 提示词制作指令包括汇总、提取关键词、标签、标注、摘要、合并、标题、要点、清洗、去重、主题、大纲、导语、问题、要素抽取、模板、内容排版、翻译、脱敏和提炼等。
 - 提示词分类、类型、状态和缓存策略等编码由后端字典统一管理。
 
 提示词规则详细设计见 `docs/design/prompts.md`。
@@ -167,10 +167,12 @@ docker compose down
 ```bash
 GLUE_DB_USER=<账号> \
 GLUE_DB_PASSWORD=<密码> \
-HUB_AUTH_ADMIN_USERNAME=admin \
-HUB_AUTH_ADMIN_PASSWORD=<强密码> \
+HUB_AUTH__ADMIN_USERNAME=admin \
+HUB_AUTH__ADMIN_PASSWORD=<强密码> \
 docker compose up -d --build
 ```
+
+hub-server 配置规范：配置文件支持 YAML/JSON/TOML（按扩展名识别），所有参数均可通过环境变量和命令行参数配置，优先级为 **命令行参数 > 环境变量 > 配置文件 > 代码默认值**。环境变量以 `HUB_` 开头，`__` 表示层级（如 `HUB_LLM__MODEL` 对应 `llm.model`）；命令行用横杠表示层级（如 `--llm-model`）。
 
 常用配置环境变量：
 
@@ -178,10 +180,10 @@ docker compose up -d --build
 |---|---|
 | `GLUE_DB_USER` | 外部 MySQL 账号（必填） |
 | `GLUE_DB_PASSWORD` | 外部 MySQL 密码（必填，含特殊字符需转义） |
-| `HUB_AUTH_ADMIN_USERNAME` | 初始化管理员用户名，默认 `admin` |
-| `HUB_AUTH_ADMIN_PASSWORD` | 初始化管理员密码，生产必须修改 |
-| `HUB_LOG_LEVEL` | 日志级别：`debug`/`info`/`warn`/`error` |
-| `HUB_LLM_MODEL` / `HUB_LLM_API_BASE` / `HUB_LLM_API_KEY` | 实时生成与复合提示词计算使用的语言模型配置 |
+| `HUB_AUTH__ADMIN_USERNAME` | 初始化管理员用户名，默认 `admin` |
+| `HUB_AUTH__ADMIN_PASSWORD` | 初始化管理员密码，生产必须修改 |
+| `HUB_LOGGING__LEVEL` | 日志级别：`debug`/`info`/`warn`/`error` |
+| `HUB_LLM__MODEL` / `HUB_LLM__API_BASE` / `HUB_LLM__API_KEY` | 实时生成与复合提示词计算使用的语言模型配置 |
 
 如需使用 SQLite 本地开发，可直接运行后端镜像并挂载配置，无需 compose。前端镜像也可单独部署，通过 nginx 反向代理 `/api` 到后端服务地址。
 

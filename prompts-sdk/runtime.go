@@ -115,83 +115,44 @@ func (r *runner) eval(node Node, depth int) (string, error) {
 }
 
 func (r *runner) executeInstruction(node *CallNode, inputs []string) (string, error) {
-	if r.req.InstructionExecutor != nil {
-		res, err := r.req.InstructionExecutor.ExecuteInstruction(r.ctx, InstructionRequest{Name: node.Name, Inputs: inputs, Option: node.Option})
-		if err != nil {
-			pos := node.Pos()
-			return "", &SDKError{Code: ErrInstructionFailed, Message: err.Error(), Position: &pos}
-		}
-		r.tokens.Input += res.TokenUsage.Input
-		r.tokens.Output += res.TokenUsage.Output
-		r.tokens.Total += res.TokenUsage.Total
-		r.warnings = append(r.warnings, res.Warnings...)
-		return res.Content, nil
+	if r.req.InstructionExecutor == nil {
+		pos := node.Pos()
+		return "", &SDKError{Code: ErrInstructionFailed, Message: fmt.Sprintf("instruction %q requires LLM executor; none configured", node.Name), Position: &pos}
 	}
-	result := defaultInstruction(node.Name, inputs, node.Option)
-	inputTokens := 0
-	for _, input := range inputs {
-		inputTokens += tokenEstimate(input)
+	res, err := r.req.InstructionExecutor.ExecuteInstruction(r.ctx, InstructionRequest{Name: node.Name, Inputs: inputs, Option: node.Option})
+	if err != nil {
+		pos := node.Pos()
+		return "", &SDKError{Code: ErrInstructionFailed, Message: err.Error(), Position: &pos}
 	}
-	outputTokens := tokenEstimate(result)
-	r.tokens.Input += inputTokens
-	r.tokens.Output += outputTokens
-	r.tokens.Total += inputTokens + outputTokens
-	return result, nil
+	r.tokens.Input += res.TokenUsage.Input
+	r.tokens.Output += res.TokenUsage.Output
+	r.tokens.Total += res.TokenUsage.Total
+	r.warnings = append(r.warnings, res.Warnings...)
+	return res.Content, nil
 }
 
 func (r *runner) executeBinary(node *BinaryNode, left string, right string) (string, error) {
-	switch node.Op {
-	case "|":
-		return defaultInstruction("merge", []string{left, right}, ""), nil
-	case "+":
-		return defaultInstruction("synthesis", []string{left, right}, ""), nil
-	case "#":
-		return defaultInstruction("tags", []string{left, right}, ""), nil
-	default:
+	name, ok := binaryInstructionName(node.Op)
+	if !ok {
 		pos := node.Pos()
 		return "", &SDKError{Code: ErrSemanticInvalid, Message: fmt.Sprintf("unknown operator %s", node.Op), Position: &pos}
 	}
+	// 运算符语义等同于对应指令，统一走指令执行路径：
+	// 既会使用已配置的 InstructionExecutor，也会按 call 形式计入 token。
+	call := &CallNode{Position: node.Position, Name: name, Args: nil, Option: ""}
+	return r.executeInstruction(call, []string{left, right})
 }
 
-func defaultInstruction(name string, inputs []string, option string) string {
-	joined := strings.TrimSpace(strings.Join(nonEmpty(inputs), "\n"))
-	switch name {
-	case "merge", "synthesis":
-		return joined
-	case "summary":
-		if option != "" {
-			return strings.TrimSpace(option + "\n" + joined)
-		}
-		return joined
-	case "clean":
-		return strings.Join(strings.Fields(joined), " ")
-	case "dedupe":
-		seen := map[string]struct{}{}
-		lines := make([]string, 0)
-		for _, line := range strings.Split(joined, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			if _, ok := seen[line]; ok {
-				continue
-			}
-			seen[line] = struct{}{}
-			lines = append(lines, line)
-		}
-		return strings.Join(lines, "\n")
-	case "template":
-		if option == "" {
-			return joined
-		}
-		return strings.ReplaceAll(option, "{{content}}", joined)
-	case "keys", "tags", "labels", "title", "bullets", "topic", "outline", "lead", "questions", "extract":
-		if option != "" {
-			return strings.TrimSpace(option + "\n" + joined)
-		}
-		return joined
+func binaryInstructionName(op string) (string, bool) {
+	switch op {
+	case "|":
+		return "merge", true
+	case "+":
+		return "synthesis", true
+	case "#":
+		return "tags", true
 	default:
-		return joined
+		return "", false
 	}
 }
 

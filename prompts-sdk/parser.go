@@ -110,18 +110,10 @@ func (p *parser) parseCall(ident Token) (Node, error) {
 	}
 	option := ""
 	endPos := end.Position.End
-	if p.peek().Kind == TokenLBrace {
-		p.next()
-		value, err := p.expect(TokenString, "expected string option")
-		if err != nil {
-			return nil, err
-		}
-		option = value.Literal
-		close, err := p.expect(TokenRBrace, "expected closing option block")
-		if err != nil {
-			return nil, err
-		}
-		endPos = close.Position.End
+	if p.peek().Kind == TokenOption {
+		optTok := p.next()
+		option = normalizeOption(optTok.Literal)
+		endPos = optTok.Position.End
 	}
 	return &CallNode{Position: Position{Start: ident.Position.Start, End: endPos}, Name: ident.Literal, Args: args, Option: option}, nil
 }
@@ -179,4 +171,13 @@ func splitPromptRef(raw string) (string, string) {
 
 func mergePos(a, b Position) Position {
 	return Position{Start: a.Start, End: b.End}
+}
+
+// normalizeOption 归一化指令参数：去除首尾空白；若整体被一对双引号包裹则去掉（向后兼容 {"..."}）。
+func normalizeOption(raw string) string {
+	s := strings.TrimSpace(raw)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	return s
 }

@@ -101,6 +101,7 @@ export interface VersionEvent {
   event_type: string;
   actor_name?: string;
   message?: string;
+  version?: string;
   created_at: string;
 }
 

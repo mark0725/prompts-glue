@@ -3,7 +3,6 @@ package promptssdk
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 type NodeKind string
@@ -172,9 +171,9 @@ type InstructionResult struct {
 }
 
 type TokenUsage struct {
-	Input  int
-	Output int
-	Total  int
+	Input  int `json:"input"`
+	Output int `json:"output"`
+	Total  int `json:"total"`
 }
 
 type ErrorStrategy string
@@ -233,11 +232,3 @@ func New() *SDK {
 }
 
 type SDK struct{}
-
-func tokenEstimate(text string) int {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return 0
-	}
-	return len(strings.Fields(text))
-}

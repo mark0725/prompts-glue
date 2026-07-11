@@ -13,14 +13,13 @@ const (
 	TokenIdent  TokenKind = "ident"
 	TokenString TokenKind = "string"
 	TokenVar    TokenKind = "var"
+	TokenOption TokenKind = "option"
 	TokenLParen TokenKind = "("
 	TokenRParen TokenKind = ")"
 	TokenComma  TokenKind = ","
 	TokenPlus   TokenKind = "+"
 	TokenPipe   TokenKind = "|"
 	TokenHash   TokenKind = "#"
-	TokenLBrace TokenKind = "{"
-	TokenRBrace TokenKind = "}"
 )
 
 type Token struct {
@@ -58,11 +57,12 @@ func lex(input string) ([]Token, error) {
 			tokens = append(tokens, simpleToken(TokenHash, input, start))
 			i++
 		case '{':
-			tokens = append(tokens, simpleToken(TokenLBrace, input, start))
-			i++
-		case '}':
-			tokens = append(tokens, simpleToken(TokenRBrace, input, start))
-			i++
+			tok, next, err := lexOption(input, start)
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, tok)
+			i = next
 		case '"':
 			tok, next, err := lexString(input, start)
 			if err != nil {
@@ -141,6 +141,39 @@ func lexIdent(input string, start int) (Token, int) {
 		i++
 	}
 	return Token{Kind: TokenIdent, Literal: input[start:i], Position: Position{Start: start, End: i}}, i
+}
+
+// lexOption 读取 `{...}` 指令参数（用户特别提示词）的原始内部文本，直到匹配的 `}`。
+// 规则：双引号内的 `}` 与 `{` 不影响匹配；非引号内按花括号深度计数（支持 `{a,b}` 这类内层花括号）。
+// 字面量为原始内部文本，不做转义处理，交由 normalizeOption 归一化。
+func lexOption(input string, start int) (Token, int, error) {
+	depth := 1
+	inString := false
+	for i := start + 1; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++ // 跳过被转义的下一个字符，使 \" 不结束引号
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return Token{Kind: TokenOption, Literal: input[start+1 : i], Position: Position{Start: start, End: i + 1}}, i + 1, nil
+			}
+		}
+	}
+	return Token{}, 0, &SDKError{Code: ErrParseFailed, Message: "unterminated option, expected closing }", Position: &Position{Start: start, End: len(input)}}
 }
 
 func isIdentStart(r rune) bool {

@@ -22,9 +22,10 @@ import (
 var packageNameRegexp = regexp.MustCompile(`^(@[a-z0-9][a-z0-9_-]*/)?[a-z0-9][a-z0-9_-]*$`)
 
 type RegistryService struct {
-	db  *gorm.DB
-	cfg config.Config
-	sdk *promptssdk.SDK
+	db       *gorm.DB
+	cfg      config.Config
+	sdk      *promptssdk.SDK
+	executor promptssdk.InstructionExecutor
 }
 
 type PackageMeta struct {
@@ -144,6 +145,7 @@ type VersionEvent struct {
 	EventType   string    `json:"event_type"`
 	ActorName   string    `json:"actor_name,omitempty"`
 	Message     string    `json:"message,omitempty"`
+	Version     string    `json:"version,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -155,7 +157,26 @@ type ContentResponse struct {
 }
 
 func NewRegistryService(db *gorm.DB, cfg config.Config) *RegistryService {
-	return &RegistryService{db: db, cfg: cfg, sdk: promptssdk.New()}
+	return &RegistryService{db: db, cfg: cfg, sdk: promptssdk.New(), executor: buildLLMExecutor(cfg)}
+}
+
+// buildLLMExecutor 根据配置构建 SDK 的 LLM 指令执行器；未配置 LLM 时返回 nil，
+// SDK 在命中指令时会返回 ErrInstructionFailed。
+func buildLLMExecutor(cfg config.Config) promptssdk.InstructionExecutor {
+	if cfg.LLM.Model == "" || cfg.LLM.APIBase == "" {
+		return nil
+	}
+	executor, err := promptssdk.NewLLMExecutor(promptssdk.LLMConfig{
+		Model:   cfg.LLM.Model,
+		APIBase: cfg.LLM.APIBase,
+		APIKey:  cfg.LLM.APIKey,
+		Proxy:   cfg.LLM.Proxy,
+		Timeout: time.Duration(cfg.LLM.Timeout),
+	})
+	if err != nil {
+		return nil
+	}
+	return executor
 }
 
 func (s *RegistryService) Search(q string, category string, tag string, status string, typ string, page int, pageSize int) (Page[PackageSummary], error) {
@@ -236,11 +257,25 @@ func (s *RegistryService) Version(name string, versionRule string) (VersionDetai
 		return VersionDetail{}, err
 	}
 	publishedByName := s.userName(version.PublishedBy)
-	var rawEvents []model.PackageVersionEvent
-	s.db.Where("package_version_id = ?", version.ID).Order("created_at asc").Find(&rawEvents)
-	events := make([]VersionEvent, 0, len(rawEvents))
-	for _, e := range rawEvents {
-		events = append(events, VersionEvent{EventType: e.EventType, ActorName: s.userName(e.ActorUserID), Message: e.Message, CreatedAt: e.CreatedAt})
+	// 事件按包聚合：包含该包所有版本的生命周期事件（创建、发布、计算、废弃等），
+	// 而非仅当前选中版本，便于在详情页展示完整版本演进时间线。
+	var rows []struct {
+		EventType   string
+		ActorUserID string
+		Message     string
+		CreatedAt   time.Time
+		Version     string
+	}
+	s.db.Table("package_version_events").
+		Select("package_version_events.event_type, package_version_events.actor_user_id, package_version_events.message, package_version_events.created_at, package_versions.version").
+		Joins("JOIN package_versions ON package_versions.id = package_version_events.package_version_id").
+		Where("package_versions.package_id = ?", pkg.ID).
+		Order("package_version_events.created_at desc").
+		Limit(200).
+		Scan(&rows)
+	events := make([]VersionEvent, 0, len(rows))
+	for _, r := range rows {
+		events = append(events, VersionEvent{EventType: r.EventType, ActorName: s.userName(r.ActorUserID), Message: r.Message, Version: r.Version, CreatedAt: r.CreatedAt})
 	}
 	return VersionDetail{Package: PackageMeta{Name: pkg.Name, Version: version.Version, Description: version.Description, Status: version.Status, Category: pkg.Category, Tags: tags, Type: version.Type, Expression: version.Expression, Dependencies: deps, CreatedAt: version.CreatedAt}, Dependencies: deps, PublishedBy: publishedByName, PublishedAt: version.PublishedAt, Events: events}, nil
 }
@@ -463,17 +498,19 @@ func (s *RegistryService) runExpression(ctx context.Context, req GenerateRequest
 	}
 	depChecksum := checksum(fmt.Sprintf("%v", deps))
 	cacheKey := checksum(expressionHash + depChecksum + contextHash + strategy)
+	start := time.Now()
 	if strategy != "NONE" && !req.Sensitive {
 		var cached model.CalculationCache
 		if err := s.db.Where("cache_key = ?", cacheKey).First(&cached).Error; err == nil && (cached.ExpiresAt == nil || cached.ExpiresAt.After(time.Now().UTC())) {
 			now := time.Now().UTC()
 			_ = s.db.Model(&cached).Updates(map[string]any{"hit_count": gorm.Expr("hit_count + ?", 1), "last_hit_at": &now}).Error
 			calc := CalculationInfo{Expression: req.Expression, Dependencies: deps, CacheHit: true, CacheKey: cacheKey, TokenUsage: promptssdk.TokenUsage{Input: cached.TokenInput, Output: cached.TokenOutput, Total: cached.TokenTotal}, ComputedAt: now}
+			hit := model.GenerationRecord{RequestUserID: userID(user), Expression: req.Expression, ExpressionHash: expressionHash, InputHash: contextHash, ResultChecksum: checksum(cached.ResultContent), CacheHit: true, CacheKey: cacheKey, TokenInput: cached.TokenInput, TokenOutput: cached.TokenOutput, TokenTotal: cached.TokenTotal, DurationMS: time.Since(start).Milliseconds()}
+			_ = s.db.Create(&hit).Error
 			return GenerateResponse{Content: cached.ResultContent, Dependencies: deps, Calculation: calc}, nil
 		}
 	}
-	start := time.Now()
-	result, err := s.sdk.Run(ctx, promptssdk.RunRequest{Expression: req.Expression, Context: req.Inputs, ContentLoader: promptssdk.ContentLoaderFunc(func(ctx context.Context, ref promptssdk.DependencyRef) (promptssdk.Content, error) {
+	result, err := s.sdk.Run(ctx, promptssdk.RunRequest{Expression: req.Expression, Context: req.Inputs, InstructionExecutor: s.executor, ContentLoader: promptssdk.ContentLoaderFunc(func(ctx context.Context, ref promptssdk.DependencyRef) (promptssdk.Content, error) {
 		_, version, err := s.resolvePackageVersion(ref.Name, ref.VersionRule, false)
 		if err != nil {
 			return promptssdk.Content{}, err
@@ -494,7 +531,7 @@ func (s *RegistryService) runExpression(ctx context.Context, req GenerateRequest
 	}
 	_ = s.db.Create(&generation).Error
 	if strategy != "NONE" && !req.Sensitive {
-		expires := time.Now().UTC().Add(s.cfg.Cache.TTL)
+		expires := time.Now().UTC().Add(time.Duration(s.cfg.Cache.TTL))
 		_ = s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "cache_key"}}, DoUpdates: clause.AssignmentColumns([]string{"result_content", "result_checksum", "token_input", "token_output", "token_total", "expires_at", "updated_at"})}).Create(&model.CalculationCache{CacheKey: cacheKey, CacheStrategy: strategy, ExpressionHash: expressionHash, DependencyChecksum: depChecksum, ContextHash: contextHash, ResultContent: result.Content, ResultChecksum: checksum(result.Content), TokenInput: result.Calculation.TokenUsage.Input, TokenOutput: result.Calculation.TokenUsage.Output, TokenTotal: result.Calculation.TokenUsage.Total, ExpiresAt: &expires}).Error
 	}
 	return GenerateResponse{Content: result.Content, Dependencies: deps, Calculation: calc, Warnings: result.Warnings}, nil

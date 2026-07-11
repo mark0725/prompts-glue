@@ -60,7 +60,7 @@ func newCreateCommand(root *rootOptions) *cobra.Command {
 				}
 				meta.Dependencies = dependenciesFromSDK(result.Dependencies)
 				if content == "" {
-					run, err := promptssdk.New().Run(context.Background(), promptssdk.RunRequest{Expression: meta.Expression, ContentLoader: NewRepository(cfg.Repository.Path).Loader()})
+					run, err := promptssdk.New().Run(context.Background(), promptssdk.RunRequest{Expression: meta.Expression, InstructionExecutor: llmExecutor(cfg), ContentLoader: NewRepository(cfg.Repository.Path).Loader()})
 					if err != nil {
 						return err
 					}
@@ -142,4 +142,22 @@ func formatVersionRule(rule string) string {
 		return ""
 	}
 	return "@" + rule
+}
+
+// llmExecutor 根据配置构建 SDK 的 LLM 指令执行器；未配置 LLM 时返回 nil，
+// SDK 在命中指令时会返回 ErrInstructionFailed（本地模式复合提示词需配置 LLM）。
+func llmExecutor(cfg Config) promptssdk.InstructionExecutor {
+	if cfg.LLM.Model == "" || cfg.LLM.APIBase == "" {
+		return nil
+	}
+	executor, err := promptssdk.NewLLMExecutor(promptssdk.LLMConfig{
+		Model:   cfg.LLM.Model,
+		APIBase: cfg.LLM.APIBase,
+		APIKey:  cfg.LLM.APIKey,
+		Proxy:   cfg.LLM.Proxy,
+	})
+	if err != nil {
+		return nil
+	}
+	return executor
 }

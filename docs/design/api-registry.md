@@ -352,7 +352,7 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 |---|---|---|---|
 | expression | 字符串 | 是 | 提示词计算表达式 |
 | inputs | 映射 | 否 | 调用方输入参数 |
-| cache_strategy | 提示词缓存策略 | 否 | 本次生成的缓存策略 |
+| cache_strategy | 提示词缓存策略 | 否 | 本次生成的缓存策略；未提供时由服务端配置 `cache.default_strategy` 决定，用户端门户不在界面传入 |
 | error_strategy | 错误处理策略 | 否 | 表达式或依赖失败时的处理策略 |
 | save_as_package | 布尔值 | 否 | 是否将结果保存为提示词包草稿 |
 | package | Package 属性 | 条件必填 | 保存为包时使用的 package 属性 |

@@ -253,7 +253,7 @@ repository 应能支持离线查询、离线创建和本地依赖解析。远程
 
 ## LLM 配置与 token 记录
 
-提示词制作指令大部分需要调用 LLM，CLI 应读取 LLM 配置并将其用于 `create`、`publish`、实时计算和复合提示词计算。LLM API 仅支持 OpenAI 兼容的聊天补全格式，实际请求地址固定为 `${ApiBase}/chat/completions`，其中 `ApiBase` 来自 `llm.api_base`。
+提示词制作指令都通过 SDK 内置的 LLM 执行器调用模型完成，CLI 读取 LLM 配置并传给 SDK，用于 `create`（复合提示词计算）等场景；未配置 LLM 时命中指令即报错，本地模式复合提示词同样需配置 LLM。LLM API 仅支持 OpenAI 兼容的聊天补全格式，实际请求地址固定为 `${ApiBase}/chat/completions`，其中 `ApiBase` 来自 `llm.api_base`。
 
 | 配置项 | 来源 | 说明 |
 |---|---|---|

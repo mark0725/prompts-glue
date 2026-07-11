@@ -24,7 +24,7 @@ func main() {
 		Short:        "prompts-glue hub server",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(configPath)
+			cfg, err := config.Load(configPath, cmd.Flags())
 			if err != nil {
 				return err
 			}
@@ -52,14 +52,15 @@ func main() {
 			return server.New(cfg, db, logger).Start()
 		},
 	}
-	root.PersistentFlags().StringVar(&configPath, "config", "", "配置文件路径")
+	root.PersistentFlags().StringVar(&configPath, "config", "", "配置文件路径（按扩展名识别 yaml/yml/json/toml）")
+	config.RegisterFlags(root.PersistentFlags())
 
 	healthcheck := &cobra.Command{
 		Use:          "healthcheck",
 		Short:        "检查服务健康状态，供容器健康检查使用",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(configPath)
+			cfg, err := config.Load(configPath, cmd.Flags())
 			if err != nil {
 				return err
 			}

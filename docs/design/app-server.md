@@ -119,6 +119,18 @@ flowchart TD
 | limits.expression_length | 表达式长度上限 |
 | logging.level | 日志级别 |
 
+### 配置规范
+
+| 项目 | 说明 |
+|---|---|
+| 文件格式 | 按扩展名识别 YAML（`.yaml`/`.yml`）、JSON（`.json`）、TOML（`.toml`） |
+| 环境变量 | 以 `HUB_` 开头，双下划线 `__` 表示层级点号，如 `HUB_LLM__MODEL` 对应 `llm.model` |
+| 命令行参数 | 横杠 `-` 表示层级点号、段内下划线转横杠，如 `--llm-api-base` 对应 `llm.api_base` |
+| 优先级 | 命令行参数 > 环境变量 > 配置文件 > 代码默认值 |
+| 时长字段 | `auth.token_ttl`、`llm.timeout`、`cache.ttl` 在文件/env/命令行中统一用文本形式，如 `24h`、`30m` |
+
+所有配置项均可通过环境变量和命令行参数覆盖；数组类型环境变量用 `__<下标>__` 指定元素，命令行用重复选项。
+
 敏感配置不得写入日志、错误详情和前端响应。
 
 ## 部署形态

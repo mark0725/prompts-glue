@@ -22,6 +22,10 @@ var allowedInstructions = map[string]struct{}{
 	"questions": {},
 	"extract":   {},
 	"template":  {},
+	"format":    {},
+	"translate": {},
+	"redact":    {},
+	"refine":    {},
 }
 
 var packageNamePattern = regexp.MustCompile(`^(@[a-z0-9][a-z0-9_-]*/)?[a-z0-9][a-z0-9_-]*$`)

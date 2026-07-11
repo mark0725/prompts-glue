@@ -127,7 +127,6 @@ export function WorkbenchPage() {
   const [textExpr, setTextExpr] = useState("");
   const [publishMode, setPublishMode] = useState(true);
 
-  const [cacheStrategy, setCacheStrategy] = useState("EPHEMERAL");
   const [errorStrategy, setErrorStrategy] = useState("STRICT");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
@@ -217,7 +216,7 @@ export function WorkbenchPage() {
     if (!expression.trim()) { toast("请先构建表达式", "error"); return; }
     setGenerating(true); setResult(null); setDeps(null);
     try {
-      const res = await api.generate({ expression, cache_strategy: cacheStrategy, error_strategy: errorStrategy });
+      const res = await api.generate({ expression, error_strategy: errorStrategy });
       setResult(res);
       api.resolveDependencies(expression).then((d) => setDeps(d.dependencies ?? [])).catch(() => setDeps([]));
     } catch (e: any) { toast(e.message, "error"); }
@@ -311,13 +310,10 @@ export function WorkbenchPage() {
                 <h2 className="mb-2 text-xs font-semibold text-foreground">执行配置</h2>
                 <div className="space-y-2">
                   <div>
-                    <span className="mb-1 block text-xs text-muted-foreground">缓存策略</span>
-                    <Select value={cacheStrategy} onChange={setCacheStrategy} options={dictItems("cache_strategy").map((i) => ({ value: i.value, label: i.label }))} />
-                  </div>
-                  <div>
                     <span className="mb-1 block text-xs text-muted-foreground">错误策略</span>
                     <Select value={errorStrategy} onChange={setErrorStrategy} options={dictItems("error_strategy").map((i) => ({ value: i.value, label: i.label }))} />
                   </div>
+                  <p className="text-[11px] text-muted-foreground">缓存策略由服务端配置统一管理，不在界面设置。</p>
                 </div>
               </Card>
             </div>
