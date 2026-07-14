@@ -117,19 +117,47 @@ func newInfoCommand(root *rootOptions) *cobra.Command {
 				}
 				return writeOutput(cmd.OutOrStdout(), root.output, formatPackageList(packages), map[string]any{"repository": cfg.Repository.Path, "packages": packages})
 			}
-			pkg, err := repo.ReadPackage(args[0], version)
-			if err != nil {
-				return err
+			var text string
+			var depsList []DependencyMeta
+			if cfg.Local {
+				pkg, err := repo.ReadPackage(args[0], version)
+				if err != nil {
+					return err
+				}
+				text = fmt.Sprintf("%s@%s\n%s", pkg.Meta.Name, pkg.Meta.Version, pkg.Meta.Description)
+				depsList = pkg.Meta.Dependencies
+			} else {
+				client, err := newRemoteClient(cfg)
+				if err != nil {
+					return err
+				}
+				if err := client.requireToken(); err != nil {
+					return err
+				}
+				name, ver := splitNameVersion(args[0])
+				if ver == "" {
+					ver = version
+				}
+				if ver == "" {
+					ver = "latest"
+				}
+				detail, err := client.versionDetail(cmd.Context(), name, ver)
+				if err != nil {
+					return err
+				}
+				text = fmt.Sprintf("%s@%s\n%s", detail.Package.Name, detail.Package.Version, detail.Package.Description)
+				for _, d := range detail.Dependencies {
+					depsList = append(depsList, DependencyMeta{Name: d.Name, VersionRule: d.VersionRule, ResolvedVersion: d.ResolvedVersion, Optional: d.Optional, AffectsCompute: d.AffectsCompute})
+				}
 			}
-			text := fmt.Sprintf("%s@%s\n%s", pkg.Meta.Name, pkg.Meta.Version, pkg.Meta.Description)
 			if deps {
 				lines := []string{text, "dependencies:"}
-				for _, dep := range pkg.Meta.Dependencies {
+				for _, dep := range depsList {
 					lines = append(lines, "- "+dep.Name+formatVersionRule(dep.VersionRule))
 				}
 				text = strings.Join(lines, "\n")
 			}
-			return writeOutput(cmd.OutOrStdout(), root.output, text, pkg)
+			return writeOutput(cmd.OutOrStdout(), root.output, text, map[string]any{"package": args[0], "dependencies": depsList})
 		},
 	}
 	cmd.Flags().StringVar(&version, "version", "", "指定版本，默认 latest")

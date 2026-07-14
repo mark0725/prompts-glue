@@ -55,7 +55,7 @@ flowchart TD
 
 | 能力 | 说明 |
 |---|---|
-| 认证登录 | 支持用户名密码登录和令牌访问；访问令牌只保存摘要 |
+| 认证登录 | 支持 web 与 manager 双域登录、令牌按 realm 隔离、LDAP 来源用户走 LDAP bind 校验、访问令牌只保存摘要 |
 | 包搜索 | 按关键词、分类、标签、作者、状态、类型分页搜索 |
 | 包详情 | 查看包概要、版本列表、版本元数据、依赖和内容摘要 |
 | 包发布 | 校验 package 属性、内容、表达式和权限，发布不可覆盖版本 |
@@ -70,22 +70,36 @@ flowchart TD
 
 ## 权限模型
 
-权限以用户、访问令牌、命名空间成员和资源可见性共同决定。
+权限以用户域、访问令牌、命名空间成员和资源可见性共同决定。用户按域拆为两组：web 用户（web 门户与 registry API 使用者）与管理用户（管理界面运营员工），令牌按 realm（WEB/MANAGER）绑定所属域。边界是单向的：registry 路由接受任意已认证令牌（WEB 或 MANAGER），管理 API 仅接受 MANAGER 域令牌。即 web 用户被挡在管理 API 之外，manager 用户可同时访问管理 API 与 registry 资源（管理界面需浏览与管理提示词包）。
 
 | 场景 | 访问要求 |
 |---|---|
-| 查看公开包 | 匿名可访问 |
+| 查看公开包 | 匿名可访问；携带令牌须为有效令牌 |
 | 查看私有或内部包 | 已认证且具备资源访问权限 |
 | 发布新包或新版本 | 已认证且具备目标命名空间维护权限 |
-| 废弃版本 | 维护者、所有者或管理员 |
+| 废弃版本 | 已认证维护者、所有者或管理员 |
+| 实时生成 | 匿名可访问；携带令牌须为有效令牌 |
+| 管理 API（用户、字典、配置、缓存、审计、LDAP 同步） | MANAGER 域已认证 |
 | 字典读取 | 匿名可读取启用字典 |
-| 字典维护 | 管理员 |
-| 服务配置维护 | 管理员 |
-| 缓存查看和清理 | 管理员或包维护者 |
-| 审计日志查看 | 管理员 |
-| 风险标记处理 | 管理员或运营角色 |
+| 字典维护 | MANAGER 域 |
+| 服务配置维护 | MANAGER 域 |
+| 缓存查看和清理 | 已认证（MANAGER 域或包维护者） |
+| 审计日志查看 | MANAGER 域 |
+| 风险标记处理 | MANAGER 域 |
 
-权限不足时应返回统一错误，不暴露私有资源是否存在的敏感细节。
+WEB 令牌访问管理 API 返回 403；身份接口按域隔离，web 用户用 `/api/registry/auth/me`、manager 用户用 `/api/admin/auth/me`。权限不足时应返回统一错误，不暴露私有资源是否存在的敏感细节。
+
+### 登录与令牌
+
+web 用户经 `/api/registry/auth/login` 登录并签发 WEB 域令牌；管理用户经 `/api/admin/auth/login` 登录并签发 MANAGER 域令牌。登录按账号来源分派凭据校验：LOCAL 来源校验本地密码摘要；LDAP 来源以其 external_id（DN）+ 密码发起 LDAP bind 校验；WEB 来源（预留）当前不可登录。**登录签发的访问令牌不过期**。访问令牌只保存摘要并携带 realm，认证时按 realm 回查对应表。登录请求可带 `client` 字段（cli/web/manager）用于令牌命名，登录令牌在个人中心与管理端的令牌列表中可见、可吊销。
+
+### 个人访问令牌
+
+web 用户可在个人中心创建个人访问令牌（PAT），默认不过期、可设置过期时间；创建时返回明文（仅一次），列表与吊销经 `/api/registry/tokens`。管理端可在用户管理中查看并吊销任意用户的令牌（`/api/admin/{users|manager-users}/{id}/tokens`）。令牌用于 CLI 鉴权（`server.token`）。
+
+### 基于角色的访问控制
+
+管理端 API 按 RBAC 控制：权限按 code 前缀分组（user/role/dict/config/risk/audit/cache/ldap/generation），角色拥有若干权限并分配给 manager 用户。引导管理员默认拥有 admin 角色（全部权限、内置不可删）。管理端写操作经权限校验（如 `user:write`、`role:write`、`ldap:sync`），读操作经对应 `:read` 权限校验。角色、权限、成员的管理接口见 [app-manager.md](app-manager.md)。
 
 ## 数据一致性
 
@@ -118,16 +132,29 @@ flowchart TD
 | limits.page_size_max | 分页大小上限 |
 | limits.expression_length | 表达式长度上限 |
 | logging.level | 日志级别 |
+| ldap.enable | 是否启用 LDAP 同步与登录验证 |
+| ldap.host / ldap.port | LDAP 服务地址与端口 |
+| ldap.bind_dn / ldap.bind_password | 同步用的服务账号 DN 与密码 |
+| ldap.search_dn | 用户搜索基准 DN |
+| ldap.user_filter | 用户搜索过滤式，默认 `(objectClass=person)` |
+| ldap.attribute | 用户名属性，默认 `uid` |
+| ldap.display_name_attribute | 展示名属性，默认 `givenName`，缺失时回退到用户名属性 |
+| ldap.start_tls / ldap.ldaps / ldap.verify_host | StartTLS、LDAPS 与主机名校验开关 |
+| ldap.timeout | 连接超时，文本形式如 `10s` |
+| ldap.sync_targets | 同步目标表列表，可选 `manager`、`web`；默认仅 `["manager"]`，含 `web` 时也同步到 web 用户表 |
+| ldap.sync_interval | 周期同步间隔，文本形式如 `30m`；不大于 0 时不启动周期同步 |
+
+> 引导管理员账号初始化到管理用户表（`manager_users`，来源 LOCAL、角色 ADMIN），通过 `auth.admin_username` / `auth.admin_password` 与管理端登录端点登录。
 
 ### 配置规范
 
 | 项目 | 说明 |
 |---|---|
 | 文件格式 | 按扩展名识别 YAML（`.yaml`/`.yml`）、JSON（`.json`）、TOML（`.toml`） |
-| 环境变量 | 以 `HUB_` 开头，双下划线 `__` 表示层级点号，如 `HUB_LLM__MODEL` 对应 `llm.model` |
-| 命令行参数 | 横杠 `-` 表示层级点号、段内下划线转横杠，如 `--llm-api-base` 对应 `llm.api_base` |
+| 环境变量 | 以 `HUB_` 开头，双下划线 `__` 表示层级点号，如 `HUB_LLM__MODEL` 对应 `llm.model`；数组元素用 `__<下标>` 指定（也接受带尾 `__` 的 `__<下标>__` 写法），如 `HUB_LDAP__SYNC_TARGETS__0=manager`（环境变量数组整体覆盖默认值，同时同步 manager 与 web 需设置 `__0` 与 `__1`） |
+| 命令行参数 | 横杠 `-` 表示层级点号、段内下划线转横杠，如 `--llm-api-base` 对应 `llm.api_base`；`--ldap-sync-targets web` 可重复 |
 | 优先级 | 命令行参数 > 环境变量 > 配置文件 > 代码默认值 |
-| 时长字段 | `auth.token_ttl`、`llm.timeout`、`cache.ttl` 在文件/env/命令行中统一用文本形式，如 `24h`、`30m` |
+| 时长字段 | `auth.token_ttl`、`llm.timeout`、`cache.ttl`、`ldap.timeout`、`ldap.sync_interval` 在文件/env/命令行中统一用文本形式，如 `24h`、`30m` |
 
 所有配置项均可通过环境变量和命令行参数覆盖；数组类型环境变量用 `__<下标>__` 指定元素，命令行用重复选项。
 

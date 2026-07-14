@@ -18,7 +18,7 @@ func NewDictService(db *gorm.DB) *DictService {
 func (s *DictService) SeedDefaults() error {
 	items := DefaultDictItems()
 	for _, item := range items {
-		if err := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "group"}, {Name: "value"}}, DoUpdates: clause.AssignmentColumns([]string{"label", "description", "sort_order", "enabled", "system"})}).Create(&item).Error; err != nil {
+		if err := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "group"}, {Name: "value"}}, DoUpdates: clause.AssignmentColumns([]string{"label", "description", "sort_order", "enabled", "is_system"})}).Create(&item).Error; err != nil {
 			return err
 		}
 	}
@@ -80,8 +80,10 @@ func DefaultDictItems() []model.DictItem {
 		{"account_status", "ACTIVE", "正常", "正常可用"},
 		{"account_status", "DISABLED", "禁用", "不能登录或访问"},
 		{"account_status", "LOCKED", "锁定", "临时锁定"},
-		{"account_role", "ADMIN", "管理员", "系统管理员，拥有全部管理权限"},
-		{"account_role", "USER", "普通用户", "普通用户，可发布和使用提示词"},
+		{"manager_role", "ADMIN", "管理员", "管理端管理员，拥有全部管理权限"},
+		{"account_source", "LOCAL", "本地", "本地账号，使用密码认证"},
+		{"account_source", "LDAP", "LDAP", "LDAP 目录同步账号"},
+		{"account_source", "WEB", "Web", "Web 自助注册账号（预留）"},
 		{"namespace_role", "OWNER", "所有者", "拥有全部管理权限"},
 		{"namespace_role", "MAINTAINER", "维护者", "可维护包和成员"},
 		{"namespace_role", "MEMBER", "成员", "可使用授权资源"},

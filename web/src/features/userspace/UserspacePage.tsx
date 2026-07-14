@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import { api } from "@/api";
 import { useAuthStore } from "@/store/auth";
 import { useDictStore } from "@/store/dict";
-import { toast } from "@/store/feedback";
-import { Badge, Button, Card, Spinner } from "@/components/ui";
+import { confirmDialog, toast } from "@/store/feedback";
+import { Badge, Button, Card, Input, Modal, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { GenerationRecord, NamespaceSummary, PackageSummary } from "@/types";
+import type { AccessToken, GenerationRecord, NamespaceSummary, PackageSummary } from "@/types";
 
-type Tab = "packages" | "stars" | "namespaces" | "history" | "prefs";
+type Tab = "packages" | "stars" | "namespaces" | "history" | "tokens" | "prefs";
 
 export function UserspacePage() {
   const { user, logout } = useAuthStore();
@@ -24,6 +24,7 @@ export function UserspacePage() {
     { key: "stars", label: "我的收藏" },
     { key: "namespaces", label: "我的命名空间" },
     { key: "history", label: "生成历史" },
+    { key: "tokens", label: "访问令牌" },
     { key: "prefs", label: "偏好设置" },
   ];
 
@@ -37,7 +38,7 @@ export function UserspacePage() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-foreground">{user.display_name || user.username}</h1>
-              <Badge color="blue">{label("account_role", user.role)}</Badge>
+              <Badge color="blue">{label("account_source", user.source || "LOCAL")}</Badge>
               <Badge color={user.status === "ACTIVE" ? "green" : "yellow"}>{label("account_status", user.status)}</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">@{user.username}</p>
@@ -60,6 +61,7 @@ export function UserspacePage() {
         {tab === "stars" && <MyStars label={label} />}
         {tab === "namespaces" && <MyNamespaces label={label} />}
         {tab === "history" && <MyHistory />}
+        {tab === "tokens" && <AccessTokens />}
         {tab === "prefs" && <Prefs />}
       </Card>
     </div>
@@ -157,9 +159,12 @@ function MyHistory() {
     api.myGenerations(1, 50).then((r) => setItems(r.items ?? [])).catch((e) => toast(e.message, "error")).finally(() => setLoading(false));
   }, []);
   if (loading) return <div className="p-6 text-center"><Spinner /></div>;
+  const totalTokens = items.reduce((sum, r) => sum + (r.token_total ?? 0), 0);
   if (items.length === 0) return <Empty text="没有生成记录" />;
   return (
-    <table className="w-full text-sm">
+    <div className="space-y-3">
+      <div className="text-xs text-muted-foreground">累计 Token 消耗：<span className="font-semibold text-foreground">{totalTokens}</span></div>
+      <table className="w-full text-sm">
       <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
         <tr><th className="px-3 py-2">时间</th><th className="px-3 py-2">表达式</th><th className="px-3 py-2">缓存</th><th className="px-3 py-2 text-right">Token</th><th className="px-3 py-2 text-right">耗时</th></tr>
       </thead>
@@ -175,6 +180,86 @@ function MyHistory() {
         ))}
       </tbody>
     </table>
+    </div>
+  );
+}
+
+function AccessTokens() {
+  const [items, setItems] = useState<AccessToken[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [created, setCreated] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    api.listTokens().then((r) => setItems(r.filter((t) => !t.expires_at || new Date(t.expires_at) > new Date()))).catch((e) => toast(e.message, "error")).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const submit = () => {
+    if (!name) { toast("令牌名称必填", "error"); return; }
+    api.createToken(name, expiresAt || undefined).then((r) => {
+      setCreated(r.access_token);
+      setName(""); setExpiresAt(""); setOpen(false); load();
+      toast("令牌已创建，请立即复制保存", "success");
+    }).catch((e) => toast(e.message, "error"));
+  };
+  const revoke = async (id: string, label: string) => {
+    const ok = await confirmDialog(`确定吊销令牌 ${label}？`, "吊销令牌");
+    if (!ok) return;
+    api.revokeToken(id).then(() => { toast("已吊销", "success"); load(); }).catch((e) => toast(e.message, "error"));
+  };
+  const copy = (v: string) => { navigator.clipboard?.writeText(v).then(() => toast("已复制", "success")); };
+
+  if (loading) return <div className="p-6 text-center"><Spinner /></div>;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">访问令牌用于 CLI 鉴权（glue config set server.token &lt;token&gt;）。登录创建的令牌也会显示在此处。</p>
+        <Button size="sm" onClick={() => setOpen(true)}>新建令牌</Button>
+      </div>
+      {created && (
+        <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+          <div className="text-xs font-medium text-foreground">令牌仅显示一次，请立即复制保存：</div>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs">{created}</code>
+            <Button size="sm" variant="outline" onClick={() => copy(created)}>复制</Button>
+          </div>
+        </div>
+      )}
+      <table className="w-full text-sm">
+        <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+          <tr><th className="px-3 py-2">名称</th><th className="px-3 py-2">创建时间</th><th className="px-3 py-2">最近使用</th><th className="px-3 py-2">过期时间</th><th className="px-3 py-2 text-right">操作</th></tr>
+        </thead>
+        <tbody>
+          {items.map((t) => (
+            <tr key={t.id} className="border-b border-border/60 hover:bg-muted/40">
+              <td className="px-3 py-2 font-mono text-xs">{t.name || "-"}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{(t.created_at || "").slice(0, 19).replace("T", " ") || "-"}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{(t.last_used_at || "").slice(0, 19).replace("T", " ") || "—"}</td>
+              <td className="px-3 py-2 text-xs text-muted-foreground">{t.expires_at ? (t.expires_at).slice(0, 19).replace("T", " ") : "永不过期"}</td>
+              <td className="px-3 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => revoke(t.id, t.name || "令牌")}>吊销</Button></td>
+            </tr>
+          ))}
+          {items.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">还没有访问令牌</td></tr>}
+        </tbody>
+      </table>
+      <Modal open={open} onClose={() => setOpen(false)} title="新建访问令牌">
+        <div className="space-y-3">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="令牌名称（如：ci-token）" />
+          <div>
+            <Input value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} placeholder="过期时间（可选，留空=永不过期）" type="datetime-local" />
+            <p className="mt-1 text-xs text-muted-foreground">留空表示永不过期。</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>取消</Button>
+            <Button size="sm" onClick={submit}>创建</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
   );
 }
 

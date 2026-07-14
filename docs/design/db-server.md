@@ -40,18 +40,53 @@ Server 数据库用于支撑 prompts-glue 后端服务的提示词包注册、�
 
 ## 账号与权限
 
-### 用户表
+系统将用户按使用域拆为两组物理表：web 用户表（`users`）承载 web 门户与 registry API 的使用者；管理用户表（`manager_users`）承载管理界面运营员工。两组用户各自登录、各自签发访问令牌，令牌按 realm 标识所属域。web 用户只能访问 web 与 registry API，manager 用户只能访问管理 API，边界由令牌 realm 与中间件共同保证。
 
-保存可登录和可授权的用户主体。
+### Web 用户表
+
+保存 web 域用户主体，使用 web 门户与 registry API。
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | id | 字符串 | 是 | 用户标识 |
 | username | 字符串 | 是 | 用户名，唯一 |
-| email | 字符串 | 否 | 邮箱，唯一时可用于登录 |
+| email | 字符串 | 否 | 邮箱，非空时唯一（空邮箱存为 NULL，不参与唯一性比较），可用于登录 |
 | display_name | 字符串 | 否 | 展示名称 |
-| password_hash | 字符串 | 否 | 密码摘要，外部令牌登录用户可为空 |
-| status | 账号状态 | 是 | 取值见 dicts.md 中的“账号状态” |
+| password_hash | 字符串 | 否 | 密码摘要，本地来源用户必填；LDAP 来源用户为空（凭据由目录校验） |
+| status | 账号状态 | 是 | 取值见 dicts.md 中的”账号状态” |
+| source | 账号来源 | 是 | 取值见 dicts.md 中的”账号来源”（LOCAL/LDAP/WEB） |
+| external_id | 字符串 | 否 | 外部身份标识，LDAP 来源为用户 DN |
+| last_login_at | UTC 时间 | 否 | 最近登录时间 |
+| created_at | UTC 时间 | 是 | 创建时间 |
+| updated_at | UTC 时间 | 是 | 更新时间 |
+| deleted_at | UTC 时间 | 否 | 软删除时间 |
+
+web 用户授权由资源归属与命名空间成员决定，不持有全局角色字段。
+
+约束与索引：
+
+| 类型 | 字段 | 说明 |
+|---|---|---|
+| 唯一约束 | username | 用户名唯一 |
+| 唯一约束 | email | 邮箱非空时唯一 |
+| 普通索引 | status | 支持管理端按状态筛选 |
+| 普通索引 | source, external_id | LDAP 同步按外部身份幂等 upsert |
+
+### 管理用户表
+
+保存 manager 域用户主体，仅使用管理界面。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| id | 字符串 | 是 | 用户标识 |
+| username | 字符串 | 是 | 用户名，唯一 |
+| email | 字符串 | 否 | 邮箱，非空时唯一 |
+| display_name | 字符串 | 否 | 展示名称 |
+| password_hash | 字符串 | 否 | 密码摘要，本地来源用户必填 |
+| status | 账号状态 | 是 | 取值见 dicts.md 中的”账号状态” |
+| source | 账号来源 | 是 | 取值 LOCAL/LDAP（管理用户不支持 web 自注册来源） |
+| external_id | 字符串 | 否 | 外部身份标识，LDAP 来源为用户 DN |
+| role | 管理角色 | 是 | 取值见 dicts.md 中的”管理角色”（默认 ADMIN） |
 | last_login_at | UTC 时间 | 否 | 最近登录时间 |
 | created_at | UTC 时间 | 是 | 创建时间 |
 | updated_at | UTC 时间 | 是 | 更新时间 |
@@ -62,17 +97,20 @@ Server 数据库用于支撑 prompts-glue 后端服务的提示词包注册、�
 | 类型 | 字段 | 说明 |
 |---|---|---|
 | 唯一约束 | username | 用户名唯一 |
-| 唯一约束 | email | 邮箱存在时唯一 |
-| 普通索引 | status | 支持管理端按状态筛选 |
+| 唯一约束 | email | 邮箱非空时唯一 |
+| 普通索引 | status | 按状态筛选 |
+| 普通索引 | source, external_id | LDAP 同步幂等 upsert |
+| 普通索引 | role | 按管理角色筛选 |
 
 ### 访问令牌表
 
-保存 CLI、Web、Manager 访问 server 的认证凭据摘要。
+保存 CLI、Web、Manager 访问 server 的认证凭据摘要。令牌按 realm 绑定所属用户表，中间件据此校验跨域访问。
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | id | 字符串 | 是 | 令牌记录标识 |
-| user_id | 字符串 | 是 | 所属用户 |
+| user_id | 字符串 | 是 | 所属用户，按 realm 指向 web 用户表或管理用户表 |
+| realm | 令牌域 | 是 | 取值 WEB/MANAGER，决定 user_id 指向哪张表 |
 | token_hash | 字符串 | 是 | 令牌摘要，不保存明文令牌 |
 | name | 字符串 | 否 | 令牌名称或设备说明 |
 | scopes | 字符串列表 | 否 | 授权范围 |
@@ -87,7 +125,38 @@ Server 数据库用于支撑 prompts-glue 后端服务的提示词包注册、�
 |---|---|---|
 | 唯一约束 | token_hash | 防止重复令牌 |
 | 普通索引 | user_id | 查询用户令牌 |
+| 普通索引 | realm | 按域筛选 |
 | 普通索引 | expires_at | 清理过期令牌 |
+
+### 角色表
+
+管理端 RBAC 角色，承载一组权限并分配给 manager 用户。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| id | 字符串 | 是 | 角色标识 |
+| code | 字符串 | 是 | 角色编码，唯一（如 admin） |
+| name | 字符串 | 是 | 角色名称 |
+| description | 字符串 | 否 | 说明 |
+| enabled | 布尔值 | 是 | 是否启用 |
+| system | 布尔值 | 是 | 内置角色不可删除 |
+| created_at / updated_at / deleted_at | UTC 时间 | 是/是/否 | 通用字段 |
+
+### 权限表
+
+按 `资源:动作` 编码的权限项，按 group 分组。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| id | 字符串 | 是 | 权限标识 |
+| code | 字符串 | 是 | 权限编码，唯一（如 user:write） |
+| name | 字符串 | 是 | 权限名称 |
+| group | 字符串 | 是 | 分组（如 user、role） |
+| sort_order | 数值 | 是 | 排序 |
+
+### 角色权限表 / 角色成员表
+
+角色权限（role_id + permission_id 复合唯一）与角色成员（role_id + user_id 复合唯一，user_id 指向 manager_users）。manager 用户的权限为其所有角色权限的并集。
 
 ### 命名空间表
 
@@ -535,9 +604,10 @@ Server 数据库用于支撑 prompts-glue 后端服务的提示词包注册、�
 
 ```mermaid
 erDiagram
-    USERS ||--o{ ACCESS_TOKENS : owns
-    USERS ||--o{ NAMESPACES : owns
-    USERS ||--o{ NAMESPACE_MEMBERS : joins
+    WEB_USERS ||--o{ ACCESS_TOKENS : "realm=WEB"
+    MANAGER_USERS ||--o{ ACCESS_TOKENS : "realm=MANAGER"
+    WEB_USERS ||--o{ NAMESPACES : owns
+    WEB_USERS ||--o{ NAMESPACE_MEMBERS : joins
     NAMESPACES ||--o{ NAMESPACE_MEMBERS : contains
     NAMESPACES ||--o{ PACKAGES : contains
     PACKAGES ||--o{ PACKAGE_VERSIONS : has

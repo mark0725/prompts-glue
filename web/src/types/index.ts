@@ -35,14 +35,28 @@ export interface User {
   email?: string;
   display_name?: string;
   status: string;
-  role: string;
+  source?: string;
   last_login_at?: string;
 }
 
 export interface LoginResponse {
   access_token: string;
-  expires_at: string;
+  expires_at?: string | null;
   user: User;
+}
+
+export interface AccessToken {
+  id: string;
+  name: string;
+  scopes?: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at?: string | null;
+}
+
+export interface CreateTokenResponse {
+  access_token: string;
+  token: AccessToken;
 }
 
 export interface Dependency {

@@ -23,7 +23,7 @@ type rootOptions struct {
 func NewRootCommand() *cobra.Command {
 	opts := &rootOptions{}
 	cmd := &cobra.Command{
-		Use:           "glue [options] <add|remove|upgrade|create|content|cache|info|config|version|publish|login>",
+		Use:           "glue [options] <add|remove|upgrade|create|content|template|cache|info|config|version|publish|login>",
 		Short:         "prompts-glue command line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -40,6 +40,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newUpgradeCommand(opts))
 	cmd.AddCommand(newCreateCommand(opts))
 	cmd.AddCommand(newContentCommand(opts))
+	cmd.AddCommand(newTemplateCommand(opts))
 	cmd.AddCommand(newCacheCommand(opts))
 	cmd.AddCommand(newInfoCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))

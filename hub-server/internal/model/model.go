@@ -2,6 +2,35 @@ package model
 
 import "time"
 
+// 用户域与来源常量。两个域的用户分别存于 users（web）与 manager_users（manager）表，
+// 访问令牌按 Realm 回查对应表。来源区分本地账号、LDAP 同步账号与（预留的）web 自注册账号。
+const (
+	RealmWeb     = "WEB"
+	RealmManager = "MANAGER"
+
+	SourceLocal = "LOCAL"
+	SourceLDAP  = "LDAP"
+	SourceWeb   = "WEB"
+
+	RoleAdmin = "ADMIN"
+)
+
+// StrPtr 把字符串转为指针，空串返回 nil（便于可空唯一列存储 NULL 而非空串，避免空值撞键）。
+func StrPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// StrVal 返回可空字符串的值，nil 视为空串。
+func StrVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 type Base struct {
 	ID        string     `gorm:"primaryKey;size:36" json:"id"`
 	CreatedAt time.Time  `json:"created_at"`
@@ -9,20 +38,62 @@ type Base struct {
 	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
 }
 
+// User 是 web 域用户，使用 web 门户与 registry API（提示词的使用者与发布者）。
+// 授权由资源归属与命名空间成员决定，因此 web 用户不持有全局角色字段。
 type User struct {
 	Base
 	Username     string     `gorm:"uniqueIndex;size:128;not null" json:"username"`
-	Email        string     `gorm:"uniqueIndex;size:255" json:"email,omitempty"`
+	Email        *string    `gorm:"uniqueIndex;size:255" json:"email,omitempty"`
 	DisplayName  string     `gorm:"size:255" json:"display_name,omitempty"`
 	PasswordHash string     `gorm:"size:255" json:"-"`
 	Status       string     `gorm:"index;size:32;not null" json:"status"`
-	Role         string     `gorm:"index;size:32;not null" json:"role"`
+	Source       string     `gorm:"index;size:32;not null;default:LOCAL" json:"source"`
+	ExternalID   string     `gorm:"index;size:512" json:"external_id,omitempty"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+}
+
+// ManagerUser 是 manager 域用户，仅使用管理界面（内部运营员工）。
+type ManagerUser struct {
+	Base
+	Username     string     `gorm:"uniqueIndex;size:128;not null" json:"username"`
+	Email        *string    `gorm:"uniqueIndex;size:255" json:"email,omitempty"`
+	DisplayName  string     `gorm:"size:255" json:"display_name,omitempty"`
+	PasswordHash string     `gorm:"size:255" json:"-"`
+	Status       string     `gorm:"index;size:32;not null;default:ACTIVE" json:"status"`
+	Source       string     `gorm:"index;size:32;not null;default:LOCAL" json:"source"`
+	ExternalID   string     `gorm:"index;size:512" json:"external_id,omitempty"`
+	Role         string     `gorm:"index;size:32;not null;default:ADMIN" json:"role"`
+	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+}
+
+// Principal 是认证后持有的运行时身份，统一 web 与 manager 两个域的用户主体。
+// 令牌按 Realm 回查对应表后构造本对象，业务层只依赖 Principal 而不直接依赖具体用户表。
+type Principal struct {
+	Realm       string     `json:"realm"`
+	ID          string     `json:"id"`
+	Username    string     `json:"username"`
+	Email       string     `json:"email,omitempty"`
+	DisplayName string     `json:"display_name,omitempty"`
+	Status      string     `json:"status"`
+	Source      string     `json:"source"`
+	Role        string     `json:"role,omitempty"` // 仅 MANAGER 域有值
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+}
+
+// PrincipalFromUser 由 web 用户构造 Principal。
+func PrincipalFromUser(u User) *Principal {
+	return &Principal{Realm: RealmWeb, ID: u.ID, Username: u.Username, Email: StrVal(u.Email), DisplayName: u.DisplayName, Status: u.Status, Source: u.Source, LastLoginAt: u.LastLoginAt}
+}
+
+// PrincipalFromManagerUser 由 manager 用户构造 Principal。
+func PrincipalFromManagerUser(u ManagerUser) *Principal {
+	return &Principal{Realm: RealmManager, ID: u.ID, Username: u.Username, Email: StrVal(u.Email), DisplayName: u.DisplayName, Status: u.Status, Source: u.Source, Role: u.Role, LastLoginAt: u.LastLoginAt}
 }
 
 type AccessToken struct {
 	ID         string     `gorm:"primaryKey;size:36" json:"id"`
 	UserID     string     `gorm:"index;size:36;not null" json:"user_id"`
+	Realm      string     `gorm:"index;size:16;not null;default:WEB" json:"realm"`
 	TokenHash  string     `gorm:"uniqueIndex;size:128;not null" json:"-"`
 	Name       string     `gorm:"size:255" json:"name,omitempty"`
 	Scopes     string     `gorm:"type:text" json:"scopes,omitempty"`
@@ -30,6 +101,39 @@ type AccessToken struct {
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// Role 管理端角色，承载一组权限并分配给 manager 用户。
+type Role struct {
+	Base
+	Code        string `gorm:"uniqueIndex;size:64;not null" json:"code"`
+	Name        string `gorm:"size:128;not null" json:"name"`
+	Description string `gorm:"type:text" json:"description,omitempty"`
+	Enabled     bool   `gorm:"not null;default:true" json:"enabled"`
+	System      bool   `gorm:"column:is_system;not null;default:false" json:"system"` // 内置角色不可删除（列名 is_system 避开 MySQL 保留字 system）
+}
+
+// Permission 权限项，按 code 前缀（如 user、role）分组。
+type Permission struct {
+	Base
+	Code      string `gorm:"uniqueIndex;size:64;not null" json:"code"`
+	Name      string `gorm:"size:128;not null" json:"name"`
+	Group     string `gorm:"index;size:64;not null" json:"group"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// RolePermission 角色-权限关联。
+type RolePermission struct {
+	RoleID       string    `gorm:"uniqueIndex:idx_role_permission;index;size:36;not null" json:"role_id"`
+	PermissionID string    `gorm:"uniqueIndex:idx_role_permission;index;size:36;not null" json:"permission_id"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// RoleMember 角色成员（manager 用户）。manager 用户的权限为其所有角色的权限并集。
+type RoleMember struct {
+	RoleID    string    `gorm:"uniqueIndex:idx_role_member;index;size:36;not null" json:"role_id"`
+	UserID    string    `gorm:"uniqueIndex:idx_role_member;index;size:36;not null" json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Namespace struct {
@@ -170,7 +274,7 @@ type DictItem struct {
 	Description string `gorm:"type:text" json:"description,omitempty"`
 	SortOrder   int    `json:"sort_order"`
 	Enabled     bool   `gorm:"index" json:"enabled"`
-	System      bool   `json:"system"`
+	System      bool   `gorm:"column:is_system" json:"system"`
 }
 
 type ServiceConfig struct {

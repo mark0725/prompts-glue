@@ -213,7 +213,7 @@ func TestConfigSetAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config get returned error: %v", err)
 	}
-	for _, want := range []string{"deepseek-v4-flash", "https://api.example.com/v1", "sk-example"} {
+	for _, want := range []string{"deepseek-v4-flash", "https://api.example.com/v1", "llm.api_key: ****"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("config output missing %q: %q", want, out)
 		}
@@ -230,7 +230,7 @@ func TestLLMConfigOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config get returned error: %v", err)
 	}
-	for _, want := range []string{"https://flag.example.com/v1", "flag-key"} {
+	for _, want := range []string{"https://flag.example.com/v1", "llm.api_key: ****"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("config output missing %q: %q", want, out)
 		}

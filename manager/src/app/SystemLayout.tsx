@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { ChevronRight, Database, ScrollText, Shield, Sparkles } from "lucide-react";
+import { ChevronRight, Database, ScrollText, Shield, ShieldCheck, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const items = [
+  { path: "/system/manager-users", label: "管理端用户", icon: ShieldCheck },
   { path: "/system/dicts", label: "字典", icon: Database },
   { path: "/system/roles", label: "角色", icon: Shield },
   { path: "/system/ai-logs", label: "AI日志", icon: Sparkles },

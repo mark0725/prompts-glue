@@ -3,7 +3,7 @@ import { api } from "@/api";
 import { useDictStore } from "@/store/dict";
 import { toast } from "@/store/feedback";
 import { Badge, Card, Spinner } from "@/components/ui";
-import type { PackageSummary, User } from "@/types";
+import type { PackageSummary } from "@/types";
 
 function Stat({ label, value, accent }: { label: string; value: number; accent?: string }) {
   return (
@@ -17,17 +17,20 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 export function DashboardPage() {
   const label = useDictStore((s) => s.label);
   const [packages, setPackages] = useState<PackageSummary[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [webUsers, setWebUsers] = useState(0);
+  const [managerUsers, setManagerUsers] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.searchPackages({ page: 1, page_size: 8 }).then((r) => r.items ?? []).catch((e) => { toast(e.message, "error"); return []; }),
-      api.users().catch((e) => { toast(e.message, "error"); return []; }),
+      api.users(undefined, undefined, 1, 1).then((r) => r.total ?? 0).catch((e) => { toast(e.message, "error"); return 0; }),
+      api.managerUsers(undefined, undefined, 1, 1).then((r) => r.total ?? 0).catch((e) => { toast(e.message, "error"); return 0; }),
     ])
-      .then(([pkgs, usrs]) => {
+      .then(([pkgs, webTotal, mgrTotal]) => {
         setPackages(pkgs as PackageSummary[]);
-        setUsers(usrs as User[]);
+        setWebUsers(webTotal);
+        setManagerUsers(mgrTotal);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -42,8 +45,8 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="提示词包" value={packages.length} />
         <Stat label="已废弃版本" value={deprecated} accent="#ca8a04" />
-        <Stat label="用户" value={users.length} />
-        <Stat label="活跃用户" value={users.filter((u) => u.status === "ACTIVE").length} accent="#16a34a" />
+        <Stat label="Web 用户" value={webUsers} />
+        <Stat label="管理端用户" value={managerUsers} accent="#16a34a" />
       </div>
 
       <Card className="p-4">

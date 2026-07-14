@@ -9,7 +9,7 @@ import { Logo } from "@/components/Logo";
 const navItems = [
   { to: "/", label: "仪表盘", icon: LayoutDashboard, end: true },
   { to: "/packages", label: "提示词包", icon: Package, end: false },
-  { to: "/users", label: "用户", icon: Users, end: false },
+  { to: "/users", label: "Web 用户", icon: Users, end: false },
   { to: "/risks", label: "风险", icon: ShieldAlert, end: false },
   { to: "/cache", label: "缓存", icon: ListChecks, end: false },
 ];

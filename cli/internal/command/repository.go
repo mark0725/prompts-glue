@@ -188,7 +188,8 @@ func (r Repository) Loader() promptssdk.ContentLoader {
 		if err != nil {
 			return promptssdk.Content{}, err
 		}
-		return promptssdk.Content{Name: pkg.Meta.Name, Version: pkg.Meta.Version, Text: pkg.Content}, nil
+		// 去除 frontmatter 分隔产生的首行换行，使返回内容与 `glue content` 正文输出一致。
+		return promptssdk.Content{Name: pkg.Meta.Name, Version: pkg.Meta.Version, Text: strings.TrimPrefix(pkg.Content, "\n")}, nil
 	})
 }
 

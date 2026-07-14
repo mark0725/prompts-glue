@@ -86,6 +86,9 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 |---|---|---|
 | POST | `/auth/login` | 登录并获取访问凭据 |
 | GET | `/auth/me` | 查看当前登录身份 |
+| GET | `/tokens` | 列出当前用户的访问令牌（登录令牌与 PAT） |
+| POST | `/tokens` | 创建个人访问令牌（明文仅返回一次） |
+| DELETE | `/tokens/{id}` | 吊销指定访问令牌 |
 | GET | `/packages` | 搜索提示词包 |
 | GET | `/packages/{name}` | 查看包概要和版本列表 |
 | GET | `/packages/{name}/versions/{version}` | 查看指定版本详情 |
@@ -104,6 +107,8 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 
 ## 认证接口
 
+registry 认证接口面向 web 域用户，签发 WEB 域访问令牌。管理端用户登录与身份接口见 [app-manager.md](app-manager.md)，签发 MANAGER 域令牌。
+
 ### 登录
 
 | 项目 | 说明 |
@@ -111,15 +116,16 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 | 方法 | POST |
 | 路径 | `/api/registry/auth/login` |
 | 认证 | 不需要 |
-| 用途 | 获取访问 Registry 的认证凭据 |
+| 用途 | web 域用户登录，获取访问 Registry 的 WEB 域访问凭据 |
 
 请求字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| username | 字符串 | 是 | 用户名、邮箱或账号标识 |
-| password | 字符串 | 条件必填 | 密码凭据 |
-| token | 字符串 | 条件必填 | 外部访问令牌 |
+| username | 字符串 | 是 | 用户名或邮箱 |
+| password | 字符串 | 是 | 密码凭据 |
+
+凭据校验按账号来源分派：LOCAL 来源校验本地密码摘要；LDAP 来源以其 external_id（DN）+ 密码发起 LDAP bind 校验；WEB 来源（预留）当前不可登录。web 域令牌只能访问 registry 与 web 鉴权路由，访问管理 API 返回 403。
 
 响应数据：
 
@@ -127,7 +133,7 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 |---|---|---|---|
 | access_token | 字符串 | 是 | 访问凭据 |
 | expires_at | UTC 时间 | 否 | 过期时间 |
-| user | 用户对象 | 是 | 当前用户信息 |
+| user | 用户对象 | 是 | 当前用户信息（含来源 source） |
 
 ### 当前身份
 
@@ -387,8 +393,8 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 |---|---|
 | 方法 | POST |
 | 路径 | `/api/registry/generate` |
-| 认证 | 根据服务策略决定 |
-| 用途 | 提交 expression 并实时生成提示词内容 |
+| 认证 | 需要（WEB 域令牌） |
+| 用途 | 提交 expression 并实时生成提示词内容；token 消耗记在登录用户下 |
 
 请求字段：
 

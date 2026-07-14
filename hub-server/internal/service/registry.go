@@ -104,18 +104,18 @@ type Page[T any] struct {
 }
 
 type PackageSummary struct {
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	LatestVersion string    `json:"latest_version,omitempty"`
-	Status        string    `json:"status"`
-	Category      string    `json:"category"`
-	Tags          []string  `json:"tags,omitempty"`
-	Author        string    `json:"author,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	DownloadCount int64     `json:"download_count"`
-	ReferenceCount int64    `json:"reference_count"`
-	StarCount     int64     `json:"star_count"`
-	Starred       bool      `json:"starred"`
+	Name           string    `json:"name"`
+	Description    string    `json:"description"`
+	LatestVersion  string    `json:"latest_version,omitempty"`
+	Status         string    `json:"status"`
+	Category       string    `json:"category"`
+	Tags           []string  `json:"tags,omitempty"`
+	Author         string    `json:"author,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	DownloadCount  int64     `json:"download_count"`
+	ReferenceCount int64     `json:"reference_count"`
+	StarCount      int64     `json:"star_count"`
+	Starred        bool      `json:"starred"`
 }
 
 type PackageDetail struct {
@@ -139,19 +139,19 @@ type VersionSummary struct {
 }
 
 type VersionDetail struct {
-	Package      PackageMeta    `json:"package"`
+	Package      PackageMeta      `json:"package"`
 	Dependencies []DependencyMeta `json:"dependencies"`
-	PublishedBy  string         `json:"published_by,omitempty"`
-	PublishedAt  *time.Time     `json:"published_at,omitempty"`
-	Events       []VersionEvent `json:"events,omitempty"`
+	PublishedBy  string           `json:"published_by,omitempty"`
+	PublishedAt  *time.Time       `json:"published_at,omitempty"`
+	Events       []VersionEvent   `json:"events,omitempty"`
 }
 
 type VersionEvent struct {
-	EventType   string    `json:"event_type"`
-	ActorName   string    `json:"actor_name,omitempty"`
-	Message     string    `json:"message,omitempty"`
-	Version     string    `json:"version,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	EventType string    `json:"event_type"`
+	ActorName string    `json:"actor_name,omitempty"`
+	Message   string    `json:"message,omitempty"`
+	Version   string    `json:"version,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type ContentResponse struct {
@@ -299,14 +299,22 @@ func (s *RegistryService) userName(userID string) string {
 	if userID == "" {
 		return ""
 	}
+	// actor 可能是 web 用户（发布）或 manager 用户（废弃等），先查 web 表再回退 manager 表。
 	var user model.User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
-		return ""
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err == nil {
+		if user.DisplayName != "" {
+			return user.DisplayName
+		}
+		return user.Username
 	}
-	if user.DisplayName != "" {
-		return user.DisplayName
+	var mgr model.ManagerUser
+	if err := s.db.Where("id = ?", userID).First(&mgr).Error; err == nil {
+		if mgr.DisplayName != "" {
+			return mgr.DisplayName
+		}
+		return mgr.Username
 	}
-	return user.Username
+	return ""
 }
 
 func (s *RegistryService) Content(name string, versionRule string, userID string, ip string, userAgent string, trackDownload bool) (ContentResponse, error) {
@@ -328,7 +336,7 @@ func (s *RegistryService) Content(name string, versionRule string, userID string
 	return ContentResponse{Package: detail.Package, Content: content.Content, Readme: content.Readme, Checksum: content.Checksum}, nil
 }
 
-func (s *RegistryService) Publish(ctx context.Context, req PublishRequest, user *model.User) (PublishResponse, error) {
+func (s *RegistryService) Publish(ctx context.Context, req PublishRequest, user *model.Principal) (PublishResponse, error) {
 	if user == nil {
 		return PublishResponse{}, errors.New("authentication required")
 	}
@@ -424,7 +432,7 @@ func (s *RegistryService) Publish(ctx context.Context, req PublishRequest, user 
 	return resp, nil
 }
 
-func (s *RegistryService) Deprecate(name string, versionRule string, reason string, replacement string, user *model.User) error {
+func (s *RegistryService) Deprecate(name string, versionRule string, reason string, replacement string, user *model.Principal) error {
 	if user == nil {
 		return errors.New("authentication required")
 	}
@@ -463,7 +471,7 @@ func (s *RegistryService) ResolveDependencies(expression string) ([]DependencyMe
 	return deps, nil
 }
 
-func (s *RegistryService) Generate(ctx context.Context, req GenerateRequest, user *model.User) (GenerateResponse, error) {
+func (s *RegistryService) Generate(ctx context.Context, req GenerateRequest, user *model.Principal) (GenerateResponse, error) {
 	return s.runExpression(ctx, req, user)
 }
 
@@ -493,7 +501,7 @@ func (s *RegistryService) ClearCache(expiredOnly bool) error {
 	return query.Delete(&model.CalculationCache{}).Error
 }
 
-func (s *RegistryService) runExpression(ctx context.Context, req GenerateRequest, user *model.User) (GenerateResponse, error) {
+func (s *RegistryService) runExpression(ctx context.Context, req GenerateRequest, user *model.Principal) (GenerateResponse, error) {
 	if req.Expression == "" {
 		return GenerateResponse{}, errors.New("expression is required")
 	}
@@ -658,7 +666,7 @@ func shortName(name string) string {
 	return name
 }
 
-func userID(user *model.User) string {
+func userID(user *model.Principal) string {
 	if user == nil {
 		return ""
 	}
@@ -858,7 +866,7 @@ func (s *RegistryService) starredSet(userID string, ids []string) map[string]boo
 }
 
 // Star 收藏包；同一用户对同一包仅计一次（唯一索引保证幂等）。
-func (s *RegistryService) Star(name string, user *model.User) (int64, error) {
+func (s *RegistryService) Star(name string, user *model.Principal) (int64, error) {
 	if user == nil {
 		return 0, errors.New("authentication required")
 	}
@@ -886,7 +894,7 @@ func (s *RegistryService) Star(name string, user *model.User) (int64, error) {
 }
 
 // Unstar 取消收藏；幂等。
-func (s *RegistryService) Unstar(name string, user *model.User) (int64, error) {
+func (s *RegistryService) Unstar(name string, user *model.Principal) (int64, error) {
 	if user == nil {
 		return 0, errors.New("authentication required")
 	}
@@ -910,8 +918,12 @@ func (s *RegistryService) syncStarCount(packageID string) int64 {
 
 // MyStars 返回当前用户收藏的包列表。
 func (s *RegistryService) MyStars(userID string, page, pageSize int) (Page[PackageSummary], error) {
-	if page < 1 { page = 1 }
-	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax { pageSize = s.cfg.Limits.PageSizeMax }
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax {
+		pageSize = s.cfg.Limits.PageSizeMax
+	}
 	var total int64
 	s.db.Model(&model.PackageStar{}).Where("user_id = ?", userID).Count(&total)
 	var packages []model.Package
@@ -927,7 +939,9 @@ func (s *RegistryService) MyStars(userID string, page, pageSize int) (Page[Packa
 		latestStatus := ""
 		if pkg.LatestVersion != "" {
 			var v model.PackageVersion
-			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil { latestStatus = v.Status }
+			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil {
+				latestStatus = v.Status
+			}
 		}
 		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: downloads[pkg.ID], ReferenceCount: references[pkg.Name], StarCount: pkg.StarCount, Starred: true})
 	}
@@ -935,8 +949,12 @@ func (s *RegistryService) MyStars(userID string, page, pageSize int) (Page[Packa
 }
 
 func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[PackageSummary], error) {
-	if page < 1 { page = 1 }
-	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax { pageSize = s.cfg.Limits.PageSizeMax }
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax {
+		pageSize = s.cfg.Limits.PageSizeMax
+	}
 	var total int64
 	s.db.Model(&model.Package{}).Where("owner_user_id = ? AND deleted_at IS NULL", userID).Count(&total)
 	var packages []model.Package
@@ -949,7 +967,9 @@ func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[Pa
 		latestStatus := ""
 		if pkg.LatestVersion != "" {
 			var v model.PackageVersion
-			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil { latestStatus = v.Status }
+			if s.db.Where("package_id = ? AND version = ?", pkg.ID, pkg.LatestVersion).First(&v).Error == nil {
+				latestStatus = v.Status
+			}
 		}
 		items = append(items, PackageSummary{Name: pkg.Name, Description: pkg.Description, LatestVersion: pkg.LatestVersion, Status: latestStatus, Category: pkg.Category, Tags: tags, UpdatedAt: pkg.UpdatedAt, DownloadCount: pkgDownloads[pkg.ID], ReferenceCount: pkgReferences[pkg.Name]})
 	}
@@ -957,8 +977,12 @@ func (s *RegistryService) MyPackages(userID string, page, pageSize int) (Page[Pa
 }
 
 func (s *RegistryService) MyGenerations(userID string, page, pageSize int) (Page[model.GenerationRecord], error) {
-	if page < 1 { page = 1 }
-	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax { pageSize = s.cfg.Limits.PageSizeMax }
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > s.cfg.Limits.PageSizeMax {
+		pageSize = s.cfg.Limits.PageSizeMax
+	}
 	var total int64
 	s.db.Model(&model.GenerationRecord{}).Where("request_user_id = ?", userID).Count(&total)
 	var items []model.GenerationRecord
@@ -988,8 +1012,15 @@ func (s *RegistryService) MyNamespaces(userID string) ([]NamespaceSummary, error
 	for _, m := range members {
 		// skip if already in out (owned)
 		skip := false
-		for _, o := range out { if o.ID == m.NamespaceID { skip = true; break } }
-		if skip { continue }
+		for _, o := range out {
+			if o.ID == m.NamespaceID {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
 		var ns model.Namespace
 		if s.db.First(&ns, "id = ?", m.NamespaceID).Error == nil {
 			out = append(out, NamespaceSummary{ID: ns.ID, Name: ns.Name, DisplayName: ns.DisplayName, Visibility: ns.Visibility, Role: m.Role})

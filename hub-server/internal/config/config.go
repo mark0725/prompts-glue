@@ -60,6 +60,7 @@ type Config struct {
 	Cache    CacheConfig    `yaml:"cache" json:"cache" toml:"cache"`
 	Limits   LimitsConfig   `yaml:"limits" json:"limits" toml:"limits"`
 	Logging  LoggingConfig  `yaml:"logging" json:"logging" toml:"logging"`
+	LDAP     LDAPConfig     `yaml:"ldap" json:"ldap" toml:"ldap"`
 }
 
 type ServerConfig struct {
@@ -102,6 +103,27 @@ type LoggingConfig struct {
 	Level string `yaml:"level" json:"level" toml:"level"`
 }
 
+// LDAPConfig 描述 LDAP 连接与用户同步配置。LDAP 作为企业外部身份源，
+// 默认将用户同步到 manager_users 表；在 sync_targets 中加入 "web" 时也同步到 users（web）表。
+// LDAP 来源用户登录时以 external_id（DN）+ 密码走 LDAP bind 验证，不使用本地密码摘要。
+type LDAPConfig struct {
+	Enable               bool     `yaml:"enable" json:"enable" toml:"enable"`
+	Host                 string   `yaml:"host" json:"host" toml:"host"`
+	Port                 int      `yaml:"port" json:"port" toml:"port"`
+	BindDN               string   `yaml:"bind_dn" json:"bind_dn" toml:"bind_dn"`
+	BindPassword         string   `yaml:"bind_password" json:"-" toml:"bind_password"`
+	SearchDN             string   `yaml:"search_dn" json:"search_dn" toml:"search_dn"`
+	UserFilter           string   `yaml:"user_filter" json:"user_filter" toml:"user_filter"`
+	Attribute            string   `yaml:"attribute" json:"attribute" toml:"attribute"`
+	DisplayNameAttribute string   `yaml:"display_name_attribute" json:"display_name_attribute" toml:"display_name_attribute"`
+	StartTLS             bool     `yaml:"start_tls" json:"start_tls" toml:"start_tls"`
+	LDAPS                bool     `yaml:"ldaps" json:"ldaps" toml:"ldaps"`
+	VerifyHost           bool     `yaml:"verify_host" json:"verify_host" toml:"verify_host"`
+	Timeout              Duration `yaml:"timeout" json:"timeout" toml:"timeout"`
+	SyncTargets          []string `yaml:"sync_targets" json:"sync_targets" toml:"sync_targets"`
+	SyncInterval         Duration `yaml:"sync_interval" json:"sync_interval" toml:"sync_interval"`
+}
+
 func Default() Config {
 	return Config{
 		Server:   ServerConfig{Address: ":8080"},
@@ -110,6 +132,15 @@ func Default() Config {
 		Cache:    CacheConfig{DefaultStrategy: "VERSIONED", TTL: Duration(time.Hour)},
 		Limits:   LimitsConfig{RequestBodyBytes: 1 << 20, PageSizeMax: 100, ExpressionLength: 20000, DependencyDepth: 16},
 		Logging:  LoggingConfig{Level: "info"},
+		LDAP: LDAPConfig{
+			Attribute:            "uid",
+			DisplayNameAttribute: "givenName",
+			UserFilter:           "(objectClass=person)",
+			VerifyHost:           true,
+			Timeout:              Duration(10 * time.Second),
+			SyncTargets:          []string{"manager"},
+			SyncInterval:         Duration(30 * time.Minute),
+		},
 	}
 }
 
@@ -357,7 +388,8 @@ func setSlice(field reflect.Value, values []string) error {
 	return nil
 }
 
-// setSliceFromEnv 收集 HUB_<base>__<i> 形式的环境变量为数组元素（i 为下标段）。
+// setSliceFromEnv 收集 HUB_<base>__<i> 或 HUB_<base>__<i>__ 形式的环境变量为数组元素（i 为下标段）。
+// 项目规范为数组元素下标带尾 __（如 HUB_LDAP__SYNC_TARGETS__0__），此处同时兼容不带尾 __ 的写法。
 func setSliceFromEnv(field reflect.Value, baseEnv string) {
 	prefix := baseEnv + envSep
 	idxVals := map[int]string{}
@@ -370,7 +402,9 @@ func setSliceFromEnv(field reflect.Value, baseEnv string) {
 		if eq < 0 {
 			continue
 		}
-		n, err := strconv.Atoi(kv[len(prefix):eq])
+		// 下标段位于 prefix 之后、'=' 之前；去掉规范要求的尾随 __ 再解析为整数。
+		idxSeg := strings.TrimSuffix(kv[len(prefix):eq], envSep)
+		n, err := strconv.Atoi(idxSeg)
 		if err != nil {
 			continue
 		}

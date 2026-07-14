@@ -17,12 +17,13 @@
 # 修改管理员密码请调整 HUB_AUTH__ADMIN_PASSWORD，勿使用示例默认值。
 
 services:
-  hub-server:
+  glue-hub-server:
     build:
       context: .
       dockerfile: hub-server/Dockerfile
     restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai
       HUB_DATABASE__DRIVER: mysql
       HUB_DATABASE__DSN: "${GLUE_DB_USER:?请设置 GLUE_DB_USER}:${GLUE_DB_PASSWORD:?请设置 GLUE_DB_PASSWORD}@tcp(10.2.20.161:3306)/glue_db?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&readTimeout=30s&writeTimeout=30s"
       HUB_AUTH__ADMIN_USERNAME: ${HUB_AUTH__ADMIN_USERNAME:-admin}
@@ -31,31 +32,45 @@ services:
       HUB_LLM__MODEL: ${HUB_LLM__MODEL:-}
       HUB_LLM__API_BASE: ${HUB_LLM__API_BASE:-}
       HUB_LLM__API_KEY: ${HUB_LLM__API_KEY:-}
+      HUB_LDAP__ENABLE: ${HUB_LDAP__ENABLE:-true}
+      HUB_LDAP__HOST: ${HUB_LDAP__HOST:-}
+      HUB_LDAP__PORT: ${HUB_LDAP__PORT:-389}
+      HUB_LDAP__BIND_DN: ${HUB_LDAP__BIND_DN:-}
+      HUB_LDAP__BIND_PASSWORD: ${HUB_LDAP__BIND_PASSWORD:-}
+      HUB_LDAP__SEARCH_DN: ${HUB_LDAP__SEARCH_DN:-}
+      HUB_LDAP__START_TLS: ${HUB_LDAP__START_TLS:-false}
+      HUB_LDAP__LDAPS: ${HUB_LDAP__LDAPS:-false}
+      HUB_LDAP__VERIFY_HOST: ${HUB_LDAP__VERIFY_HOST:-true}
+      HUB_LDAP__TIMEOUT: ${HUB_LDAP__TIMEOUT:-10s}
+      HUB_LDAP__SYNC_TARGETS__0: manager
+      HUB_LDAP__SYNC_TARGETS__1: web
+      HUB_LDAP__SYNC_INTERVAL: ${HUB_LDAP__SYNC_INTERVAL:-30m}
+      HUB_SMTP__PASSWORD: ${SMTP__PASSWORD:-}
     ports:
       - "10800:8080"
     networks:
       - glue
 
-  web:
+  glue-web:
     build:
       context: web
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      hub-server:
+      glue-hub-server:
         condition: service_healthy
     ports:
       - "10801:80"
     networks:
       - glue
 
-  manager:
+  glue-manager:
     build:
       context: manager
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      hub-server:
+      glue-hub-server:
         condition: service_healthy
     ports:
       - "10802:80"

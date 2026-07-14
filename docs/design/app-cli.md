@@ -2,7 +2,7 @@
 
 ## 概述
 
-`glue` 是 prompts-glue 的命令行客户端，用于在终端中完成提示词包的创建、安装、移除、升级、缓存管理、信息查看、配置管理、版本查看、发布和登录操作。
+`glue` 是 prompts-glue 的命令行客户端，用于在终端中完成提示词包的创建、安装、移除、升级、缓存管理、信息查看、配置管理、版本查看、发布、登录和模板渲染操作。
 
 命令行工具既支持连接远程 server 进行搜索、发布、下载和账号相关操作，也支持本地模式在不连接远程 server 的情况下管理本地提示词仓库。
 
@@ -18,10 +18,10 @@
 
 命令行工具名称为 `glue`。
 
-| 格式　　　　　　　　 | 说明　 |         |        |       |      |        |         |         |                     | 　　　　　　　　 |
-| ----------------------| --------| ---------| --------| -------| ------| --------| ---------| ---------| ---------------------| ------------------|
-| `glue [options] <add | remove | upgrade | create | cache | info | config | version | publish | login>`             | 执行指定命令　　 |
-| `glue [options] <add | remove | upgrade | create | cache | info | config | version | publish | login> [arguments]` | 执行带参数的命令 |
+| 格式　　　　　　　　 | 说明　 |         |        |       |      |        |         |         |                     |          | 　　　　　　　　 |
+| ----------------------| --------| ---------| --------| -------| ------| --------| ---------| ---------| ---------------------| --------| ------------------|
+| `glue [options] <add | remove | upgrade | create | template | cache | info | config | version | publish | login>` | 执行指定命令　　 |
+| `glue [options] <add | remove | upgrade | create | template | cache | info | config | version | publish | login> [arguments]` | 执行带参数的命令 |
 
 支持的命令取值见 [dicts.md](dicts.md) 中的“CLI 命令”定义。
 
@@ -32,12 +32,28 @@
 | 选项　　　　　　| 类型　 | 说明　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
 | -----------------| --------| ----------------------------------------------------------------------|
 | `--local`　　　 | 布尔值 | 本地操作模式，不连接远程 server；`create` 命令直接在本地创建提示词包 |
-| `--llm-model`　 | 字符串 | 指定提示词制作和计算使用的语言模型　　　　　　　　　　　　　　　　　 |
-| `--llm-api-base` | 字符串 | 指定语言模型服务的访问入口　　　　　　　　　　　　　　　　　　　　　 |
-| `--llm-api-key`  | 字符串 | 指定语言模型服务的 API Key　　　　　　　　　　　　　　　　　　　　　 |
-| `--llm-proxy`　  | 字符串 | 指定访问语言模型服务时使用的代理　　　　　　　　　　　　　　　　　　 |
+| `--llm-model`　 | 字符串 | 指定提示词制作和计算使用的语言模型（仅本地模式需要）　　　　　　　　 |
+| `--llm-api-base` | 字符串 | 指定语言模型服务的访问入口（仅本地模式需要）　　　　　　　　　　　 |
+| `--llm-api-key`  | 字符串 | 指定语言模型服务的 API Key（仅本地模式需要）　　　　　　　　　　　　|
+| `--llm-proxy`　  | 字符串 | 指定访问语言模型服务时使用的代理（仅本地模式需要）　　　　　　　　　|
 
 全局选项只描述本次命令执行行为，不应直接改写配置文件。需要持久化配置时应使用 `config` 命令。
+
+## 远程模式
+
+未启用 `--local` 时为远程模式，CLI 连接远程 server 完成操作，远程模式下不需要本地 LLM 配置：模板/表达式求值由 server 端 `/api/registry/generate` 执行，依赖与指令计算在 server 侧完成。
+
+| 命令 | 远程模式行为 |
+|---|---|
+| login | 以用户名密码登录 web 域，获取访问令牌（不过期）并写入 `server.token`（config.yaml，0600）；可用 `--username`/`--password` 或 `GLUE_USERNAME`/`GLUE_PASSWORD` 提供凭据，缺则交互输入 |
+| template | 逐 `{{...}}` 占位符调用 server `generate` 求值并组装，无需本地 LLM 与本地 repository |
+| content | 从 server 拉取指定版本正文输出 |
+| info | 从 server 查询包/版本信息，`--deps` 展示依赖 |
+| add | 从 server 拉取包与依赖写入本地 repository，递归带 visited 去重与深度上限防环 |
+| upgrade | 比对 server 最新版本，拉取新版本到本地 repository |
+| publish | 读取本地包并 POST 到 server 发布，`--dry-run` 仅校验 |
+
+远程模式需先 `glue login` 或在 `server.token` 配置个人访问令牌（可在 web 个人中心创建）。令牌缺失或失效时命令提示 `run glue login`。token 消耗记在登录用户下。
 
 ## 命令设计
 
@@ -148,6 +164,26 @@
 | 状态查看 | 展示当前登录状态、server 和用户标识　　　 |
 | 本地限制 | 本地模式下不需要登录，也不访问远程 server |
 
+### template
+
+渲染模板文件，把其中的 `{{...}}` 占位符替换为对应提示词内容或 glue 表达式求值结果后输出。
+
+| 能力 | 说明 |
+|---|---|
+| 模板输入 | 通过 `--content-file`、`--content` 或 stdin 提供模板内容，优先级 `--content-file` > `--content` > stdin |
+| 占位符求值 | 占位符 `{{ glue 表达式 }}` 内部按 glue 表达式求值；提示词 id 是最简表达式，等价于引用其内容 |
+| 变量上下文 | 通过 `--var key=value` 提供表达式中的 `$变量`，可重复 |
+| 指令求值 | 含制作指令或组合运算符的占位符复用 LLM 配置，未配置时命中即报错 |
+| 严格失败 | 任一占位符解析或求值失败即终止，不输出部分结果 |
+| 本地模式 | 仅从本地 repository 加载提示词引用，不连接远程 server |
+
+占位符语法：
+
+- 占位符以 `{{` 开始、`}}` 结束，内部为 glue 表达式，首尾空白会被忽略。
+- 占位符内的字符串字面量与制作指令 option 的花括号会被正确识别，不会误触发占位符闭合。
+- 示例：`{{ base-rules }}`、`{{ "片段" }}`、`{{ summary($text){...} }}`、`{{ a | b }}`。
+- 当前版本不支持在模板中转义输出字面 `{{`。
+
 ## 本地模式
 
 `--local` 表示本地操作模式。启用后，CLI 不连接远程 server，只使用本地配置目录和本地 repository。
@@ -163,9 +199,10 @@
 | config | 修改本地配置文件 |
 | version | 展示本地 CLI 版本信息 |
 | publish | 不执行远程发布，应提示需要关闭本地模式 |
+| template | 仅从本地 repository 加载提示词引用，不连接远程 server |
 | login | 不执行远程登录，应提示本地模式无需登录 |
 
-本地模式适用于离线制作、私有项目内使用、测试表达式和调试缓存。
+本地模式适用于离线制作、私有项目内使用、测试表达式、渲染模板和调试缓存。
 
 ## 配置设计
 
@@ -210,6 +247,9 @@
 | `GLUE_HOME` | home | 配置目录 |
 | `GLUE_REPOSITORY__PATH` | repository.path | 本地提示词包仓库路径 |
 | `GLUE_SERVER__BASE` | server.base | 远程 server 访问入口 |
+| `GLUE_SERVER__TOKEN` | server.token | 访问令牌 |
+| `GLUE_USERNAME` | — | `glue login` 默认用户名 |
+| `GLUE_PASSWORD` | — | `glue login` 默认密码 |
 | `GLUE_LOCAL` | local | 是否默认启用本地模式 |
 | `GLUE_LLM__MODEL` | llm.model | 语言模型名称 |
 | `GLUE_LLM__API_BASE` | llm.api_base | OpenAI 兼容接口的 ApiBase |
@@ -228,6 +268,7 @@
 | home | 字符串 | 配置目录，由 `GLUE_HOME` 控制 |
 | repository.path | 字符串 | 本地提示词包仓库路径 |
 | server.base | 字符串 | 远程 server 访问入口 |
+| server.token | 字符串 | 访问令牌（`glue login` 自动写入或粘贴个人访问令牌），展示时掩码 |
 | local | 布尔值 | 是否默认启用本地模式 |
 | llm.model | 字符串 | 默认语言模型 |
 | llm.api_base | 字符串 | OpenAI 兼容接口的 ApiBase，实际聊天补全接口固定为 `${ApiBase}/chat/completions` |

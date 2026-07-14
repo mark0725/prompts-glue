@@ -27,7 +27,9 @@ export interface User {
   email?: string;
   display_name?: string;
   status: string;
-  role: string;
+  role?: string;
+  source?: string;
+  realm?: string;
   last_login_at?: string;
   created_at?: string;
 }
@@ -95,12 +97,39 @@ export interface AuditLog {
   created_at: string;
 }
 
-export interface RoleAggregate {
-  code: string;
-  count: number;
+export interface AccessToken {
+  id: string;
+  name: string;
+  scopes?: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at?: string | null;
 }
 
-export interface RoleSummary {
-  account_roles: RoleAggregate[];
-  namespace_roles: RoleAggregate[];
+export interface Role {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  system: boolean;
+  created_at?: string;
+}
+
+export interface RoleDetail extends Role {
+  permission_ids: string[];
+}
+
+export interface Permission {
+  id: string;
+  code: string;
+  name: string;
+  group: string;
+  sort_order: number;
+}
+
+export interface RoleMember {
+  id: string;
+  username: string;
+  name: string;
 }

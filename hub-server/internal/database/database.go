@@ -47,6 +47,7 @@ func Ping(ctx context.Context, db *gorm.DB) error {
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&model.User{},
+		&model.ManagerUser{},
 		&model.AccessToken{},
 		&model.Namespace{},
 		&model.NamespaceMember{},
@@ -64,7 +65,25 @@ func Migrate(db *gorm.DB) error {
 		&model.DownloadRecord{},
 		&model.RiskMark{},
 		&model.PackageStar{},
+		&model.Role{},
+		&model.Permission{},
+		&model.RolePermission{},
+		&model.RoleMember{},
 	)
+}
+
+// DropLegacyUsersRole 删除 users 表的旧 role 列（web 用户的全局角色字段已从模型移除）。
+// AutoMigrate 不会删列；旧列为 NOT NULL 无默认值，会阻塞 LDAP 同步等向 users 插入新行，故显式删除。
+// role 在 MySQL 为保留字，需按方言转义；gorm Migrator.DropColumn 对已从模型移除的字段会静默 no-op，故用原始 SQL。
+func DropLegacyUsersRole(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&model.User{}, "role") {
+		return nil
+	}
+	col := `"role"` // postgres / sqlite 接受双引号标识符
+	if db.Dialector.Name() == "mysql" {
+		col = "`role`"
+	}
+	return db.Exec("ALTER TABLE users DROP COLUMN " + col).Error
 }
 
 func BeforeCreate(db *gorm.DB) {

@@ -28,3 +28,31 @@ limits:
   dependency_depth: 16
 logging:
   level: "debug"
+
+# LDAP 用户同步与登录验证。enable=false 时不同步，且 LDAP 来源用户无法登录。
+# 同步默认写入 manager_users 表；在 sync_targets 中加入 "web" 时，也同步到 users（web 用户表）。
+# 用户显示名取 display_name_attribute（默认 givenName），缺失时回退到 attribute（默认 uid）。
+ldap:
+  enable: false
+  host: "10.1.1.202"
+  port: 389
+  bind_dn: "cn=root,dc=test,dc=com"
+  bind_password: "pass1234"
+  search_dn: "ou=People,dc=test,dc=com"
+  user_filter: "(objectClass=person)"
+  attribute: "uid"
+  display_name_attribute: "givenName"
+  start_tls: false
+  ldaps: false
+  verify_host: true
+  timeout: 10s
+  sync_targets: ["manager"]   # 可选值：manager、web；含 web 时同时同步到 web 用户表
+  sync_interval: 30m
+
+# SMTP 邮件发送（预留，当前未启用）。
+smtp:
+  host: "smtp.exmail.qq.com"
+  port: 465
+  sender: "service@gingkoo.com"
+  password: "1234"
+  smtps: true

@@ -1,7 +1,9 @@
 import { request } from "./client";
 import type {
+  AccessToken,
   ASTNode,
   ContentResponse,
+  CreateTokenResponse,
   Dependency,
   GenerateResponse,
   GenerationRecord,
@@ -42,7 +44,7 @@ export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>("/api/registry/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, client: "web" }),
     }),
   me: () => request<User>("/api/registry/auth/me"),
   searchPackages: (params: SearchParams = {}) =>
@@ -96,4 +98,12 @@ export const api = {
   myGenerations: (page = 1, pageSize = 20) =>
     request<Page<GenerationRecord>>(`/api/registry/my-generations${buildQuery({ page, page_size: pageSize })}`),
   myNamespaces: () => request<NamespaceSummary[]>("/api/registry/my-namespaces"),
+  listTokens: () => request<AccessToken[]>("/api/registry/tokens"),
+  createToken: (name: string, expires_at?: string) =>
+    request<CreateTokenResponse>("/api/registry/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name, expires_at: expires_at || undefined }),
+    }),
+  revokeToken: (id: string) =>
+    request<{ revoked: boolean }>(`/api/registry/tokens/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

@@ -78,6 +78,14 @@ func newConfigCommand(root *rootOptions) *cobra.Command {
 	return cmd
 }
 
+// mask 返回密钥的掩码形式：未设置显示空，已设置显示 "****"。
+func mask(v string) string {
+	if v == "" {
+		return ""
+	}
+	return "****"
+}
+
 func formatConfigText(cfg Config) string {
-	return fmt.Sprintf("home: %s\nrepository: %s\nlocal: %t\nserver: %s\nllm.model: %s\nllm.api_base: %s\nllm.api_key: %s\ncache: %t %s", cfg.Home, cfg.Repository.Path, cfg.Local, cfg.Server.Base, cfg.LLM.Model, cfg.LLM.APIBase, cfg.LLM.APIKey, cfg.Cache.Enabled, cfg.Cache.Strategy)
+	return fmt.Sprintf("home: %s\nrepository: %s\nlocal: %t\nserver.base: %s\nserver.token: %s\nllm.model: %s\nllm.api_base: %s\nllm.api_key: %s\ncache: %t %s", cfg.Home, cfg.Repository.Path, cfg.Local, cfg.Server.Base, mask(cfg.Server.Token), cfg.LLM.Model, cfg.LLM.APIBase, mask(cfg.LLM.APIKey), cfg.Cache.Enabled, cfg.Cache.Strategy)
 }

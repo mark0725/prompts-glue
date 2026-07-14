@@ -18,11 +18,35 @@ func newContentCommand(root *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pkg, err := NewRepository(cfg.Repository.Path).ReadPackage(args[0], version)
-			if err != nil {
-				return err
+			var content string
+			if cfg.Local {
+				pkg, err := NewRepository(cfg.Repository.Path).ReadPackage(args[0], version)
+				if err != nil {
+					return err
+				}
+				content = pkg.Content
+			} else {
+				client, err := newRemoteClient(cfg)
+				if err != nil {
+					return err
+				}
+				if err := client.requireToken(); err != nil {
+					return err
+				}
+				name, ver := splitNameVersion(args[0])
+				if ver == "" {
+					ver = version
+				}
+				if ver == "" {
+					ver = "latest"
+				}
+				resp, err := client.content(cmd.Context(), name, ver)
+				if err != nil {
+					return err
+				}
+				content = resp.Content
 			}
-			content := strings.TrimPrefix(pkg.Content, "\n")
+			content = strings.TrimPrefix(content, "\n")
 			if !strings.HasSuffix(content, "\n") {
 				content += "\n"
 			}

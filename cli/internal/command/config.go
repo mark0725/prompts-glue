@@ -25,7 +25,8 @@ type RepositoryConfig struct {
 }
 
 type ServerConfig struct {
-	Base string `yaml:"base" json:"base"`
+	Base  string `yaml:"base" json:"base"`
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
 }
 
 type LLMConfig struct {
@@ -124,6 +125,9 @@ func mergeConfig(base Config, override Config) Config {
 	if override.Server.Base != "" {
 		base.Server.Base = override.Server.Base
 	}
+	if override.Server.Token != "" {
+		base.Server.Token = override.Server.Token
+	}
 	if override.LLM.Model != "" {
 		base.LLM.Model = override.LLM.Model
 	}
@@ -154,6 +158,9 @@ func applyEnv(cfg *Config) {
 	}
 	if value := os.Getenv("GLUE_SERVER__BASE"); value != "" {
 		cfg.Server.Base = value
+	}
+	if value := os.Getenv("GLUE_SERVER__TOKEN"); value != "" {
+		cfg.Server.Token = value
 	}
 	if value := os.Getenv("GLUE_LLM__MODEL"); value != "" {
 		cfg.LLM.Model = value
@@ -201,6 +208,8 @@ repository:
 server:
     # 示例: https://prompts.example.com
     base: ""
+    # 个人访问令牌或登录令牌（glue login 自动写入；切勿泄露）
+    token: ""
 llm:
     # 示例: deepseek-v4-flash
     model: ""
@@ -246,6 +255,8 @@ func setConfigValue(cfg *Config, key string, value string) error {
 		cfg.Repository.Path = value
 	case "server.base":
 		cfg.Server.Base = value
+	case "server.token":
+		cfg.Server.Token = value
 	case "local":
 		parsed, err := strconv.ParseBool(value)
 		if err != nil {

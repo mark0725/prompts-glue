@@ -202,6 +202,30 @@ func TestSliceFromEnv(t *testing.T) {
 	}
 }
 
+// TestSliceFromEnvTrailingSep 验证项目规范的数组下标带尾 __ 形式（如 HUB_LDAP__SYNC_TARGETS__0__）。
+func TestSliceFromEnvTrailingSep(t *testing.T) {
+	t.Setenv("HUB_TESTTAGS__0__", "manager")
+	t.Setenv("HUB_TESTTAGS__1__", "web")
+	var s tSliceStruct
+	field := reflect.ValueOf(&s).Elem().FieldByName("Tags")
+	setSliceFromEnv(field, "HUB_TESTTAGS")
+	if len(s.Tags) != 2 || s.Tags[0] != "manager" || s.Tags[1] != "web" {
+		t.Fatalf("unexpected slice %#v", s.Tags)
+	}
+}
+
+// TestSliceFromEnvOnlyHighIndex 验证仅设置高位下标（无 __0）时，数组整体替换默认值且不留空位。
+// 对应 HUB_LDAP__SYNC_TARGETS__1=web（不含 __0）应得到 ["web"]，而非 ["", "web"] 或保留默认。
+func TestSliceFromEnvOnlyHighIndex(t *testing.T) {
+	t.Setenv("HUB_TESTTAGS__1", "web")
+	var s tSliceStruct
+	field := reflect.ValueOf(&s).Elem().FieldByName("Tags")
+	setSliceFromEnv(field, "HUB_TESTTAGS")
+	if len(s.Tags) != 1 || s.Tags[0] != "web" {
+		t.Fatalf("expected [web], got %#v", s.Tags)
+	}
+}
+
 func TestSliceFromFlag(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.StringArray("tags", nil, "")

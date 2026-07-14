@@ -2,8 +2,11 @@ package command
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 type versionOutput struct {
@@ -30,7 +33,8 @@ func newVersionCommand(root *rootOptions) *cobra.Command {
 }
 
 func newPublishCommand(root *rootOptions) *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:   "publish <package>",
 		Short: "发布提示词包到远程 server",
 		Args:  cobra.ExactArgs(1),
@@ -42,15 +46,35 @@ func newPublishCommand(root *rootOptions) *cobra.Command {
 			if cfg.Local {
 				return fmt.Errorf("publish is unavailable in local mode")
 			}
-			return fmt.Errorf("publish requires Registry API implementation")
+			client, err := newRemoteClient(cfg)
+			if err != nil {
+				return err
+			}
+			if err := client.requireToken(); err != nil {
+				return err
+			}
+			name, version := splitNameVersion(args[0])
+			pkg, err := NewRepository(cfg.Repository.Path).ReadPackage(name, version)
+			if err != nil {
+				return err
+			}
+			resp, err := client.publish(cmd.Context(), publishRequest{Package: cliToServerMeta(pkg.Meta), Content: pkg.Content, DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			return writeOutput(cmd.OutOrStdout(), root.output, fmt.Sprintf("published %s@%s", resp.Package.Name, resp.Package.Version), map[string]any{"package": resp.Package, "dependencies": resp.Dependencies, "warnings": resp.Warnings})
 		},
 	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "仅校验与预览，不实际发布")
+	return cmd
 }
 
 func newLoginCommand(root *rootOptions) *cobra.Command {
-	return &cobra.Command{
+	var username string
+	var password string
+	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "登录远程 server",
+		Short: "登录远程 server，保存访问令牌",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadEffectiveConfig(cmd, root)
@@ -60,7 +84,74 @@ func newLoginCommand(root *rootOptions) *cobra.Command {
 			if cfg.Local {
 				return writeOutput(cmd.OutOrStdout(), root.output, "local mode does not require login", map[string]bool{"local": true})
 			}
-			return fmt.Errorf("login requires Registry API implementation")
+			user := username
+			if user == "" {
+				user = os.Getenv("GLUE_USERNAME")
+			}
+			pass := password
+			if pass == "" {
+				pass = os.Getenv("GLUE_PASSWORD")
+			}
+			if user == "" || pass == "" {
+				var err error
+				user, pass, err = promptCredentials(user)
+				if err != nil {
+					return err
+				}
+			}
+			client, err := newRemoteClient(cfg)
+			if err != nil {
+				return err
+			}
+			token, err := client.login(cmd.Context(), user, pass)
+			if err != nil {
+				return err
+			}
+			cfg.Server.Token = token
+			if err := saveConfig(cfg); err != nil {
+				return fmt.Errorf("save token: %w", err)
+			}
+			return writeOutput(cmd.OutOrStdout(), root.output, fmt.Sprintf("logged in as %s", user), map[string]string{"username": user})
 		},
 	}
+	cmd.Flags().StringVar(&username, "username", "", "登录用户名（未提供则交互输入或读 GLUE_USERNAME）")
+	cmd.Flags().StringVar(&password, "password", "", "登录密码（未提供则交互输入或读 GLUE_PASSWORD）")
+	return cmd
+}
+
+// promptCredentials 交互式读取用户名与密码（密码无回显）。prefillUser 为已通过 flag/env 提供的用户名，可为空。
+func promptCredentials(prefillUser string) (string, string, error) {
+	username := prefillUser
+	if username == "" {
+		fmt.Fprint(os.Stderr, "username: ")
+		var u string
+		if _, err := fmt.Fscanln(os.Stdin, &u); err != nil {
+			return "", "", err
+		}
+		username = strings.TrimSpace(u)
+	}
+	fmt.Fprint(os.Stderr, "password: ")
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		bytes, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", "", err
+		}
+		return username, string(bytes), nil
+	}
+	// 非终端环境（如管道）回退为明文读取。
+	var p string
+	if _, err := fmt.Fscanln(os.Stdin, &p); err != nil {
+		return "", "", err
+	}
+	return username, p, nil
+}
+
+// splitNameVersion 把 "name@version" 拆为 name 与 version（version 可空）。
+func splitNameVersion(s string) (string, string) {
+	if idx := strings.IndexByte(s, '@'); idx > 0 {
+		return s[:idx], s[idx+1:]
+	}
+	return s, ""
 }

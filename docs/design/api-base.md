@@ -6,15 +6,15 @@
 
 ## 访问约定
 
-| 项目 | 说明 |
-|---|---|
-| 数据格式 | 请求和响应使用 JSON |
-| 字符编码 | UTF-8 |
-| 时间格式 | UTC 时间 |
-| 认证方式 | Bearer Token |
-| 响应结构 | 使用统一响应结构 |
+| 项目　　 | 说明　　　　　　　　　　|
+| ----------| -------------------------|
+| 数据格式 | 请求和响应使用 JSON　　 |
+| 字符编码 | UTF-8　　　　　　　　　 |
+| 时间格式 | UTC 时间　　　　　　　　|
+| 认证方式 | Bearer Token　　　　　　|
+| 响应结构 | 使用统一响应结构　　　　|
 | 请求追踪 | 每个响应包含 request_id |
-| 分页方式 | 页码分页 |
+| 分页方式 | 页码分页　　　　　　　　|
 
 ## API 分组
 
@@ -32,6 +32,8 @@
 | Header | 说明 |
 |---|---|
 | Authorization | `Bearer <access_token>` |
+
+访问令牌按 realm 绑定所属用户域：WEB 域令牌由 `/api/registry/auth/login` 签发，MANAGER 域令牌由 `/api/admin/auth/login` 签发。registry 路由接受任意已认证令牌（WEB 或 MANAGER），管理 API（`/api/admin/*`）仅接受 MANAGER 域令牌；WEB 域令牌访问管理 API 返回 403。匿名可访问的路由若携带令牌，令牌须有效。身份接口按域区分：web 用户用 `/api/registry/auth/me`、manager 用户用 `/api/admin/auth/me`。
 
 认证凭据不得出现在 URL 查询参数、日志、业务内容、缓存内容或错误详情中。
 

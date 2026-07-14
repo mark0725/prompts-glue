@@ -176,14 +176,22 @@ hub-server 配置规范：配置文件支持 YAML/JSON/TOML（按扩展名识别
 
 常用配置环境变量：
 
-| 变量 | 说明 |
-|---|---|
-| `GLUE_DB_USER` | 外部 MySQL 账号（必填） |
-| `GLUE_DB_PASSWORD` | 外部 MySQL 密码（必填，含特殊字符需转义） |
-| `HUB_AUTH__ADMIN_USERNAME` | 初始化管理员用户名，默认 `admin` |
-| `HUB_AUTH__ADMIN_PASSWORD` | 初始化管理员密码，生产必须修改 |
-| `HUB_LOGGING__LEVEL` | 日志级别：`debug`/`info`/`warn`/`error` |
-| `HUB_LLM__MODEL` / `HUB_LLM__API_BASE` / `HUB_LLM__API_KEY` | 实时生成与复合提示词计算使用的语言模型配置 |
+| 变量　　　　　　　　　　　　　　　　　　　　　　　　　　　　| 说明　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| -------------------------------------------------------------| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GLUE_DB_USER`　　　　　　　　　　　　　　　　　　　　　　　| 外部 MySQL 账号（必填）　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| `GLUE_DB_PASSWORD`　　　　　　　　　　　　　　　　　　　　　| 外部 MySQL 密码（必填，含特殊字符需转义）　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| `HUB_AUTH__ADMIN_USERNAME`　　　　　　　　　　　　　　　　　| 初始化管理员用户名，默认 `admin`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| `HUB_AUTH__ADMIN_PASSWORD`　　　　　　　　　　　　　　　　　| 初始化管理员密码，生产必须修改　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| `HUB_LOGGING__LEVEL`　　　　　　　　　　　　　　　　　　　　| 日志级别：`debug`/`info`/`warn`/`error`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| `HUB_LLM__MODEL` / `HUB_LLM__API_BASE` / `HUB_LLM__API_KEY` | 实时生成与复合提示词计算使用的语言模型配置　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| `HUB_LDAP__ENABLE`　　　　　　　　　　　　　　　　　　　　　| 是否启用 LDAP 用户同步与登录验证，默认 `false`　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| `HUB_LDAP__HOST` / `HUB_LDAP__PORT`　　　　　　　　　　　　 | LDAP 服务地址与端口　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| `HUB_LDAP__BIND_DN` / `HUB_LDAP__BIND_PASSWORD`　　　　　　 | 同步用服务账号 DN 与密码　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　|
+| `HUB_LDAP__SEARCH_DN`　　　　　　　　　　　　　　　　　　　 | 用户搜索基准 DN　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| `HUB_LDAP__SYNC_TARGETS__0`　　　　　　　　　　　　　　　　 | 同步目标数组首元素，可选 `manager`、`web`（也接受带尾 `__` 的 `__0__` 写法）。环境变量数组会整体覆盖默认值，要同时同步 manager 与 web 需设置 `HUB_LDAP__SYNC_TARGETS__0=manager` 与 `HUB_LDAP__SYNC_TARGETS__1=web` |
+| `HUB_LDAP__SYNC_INTERVAL`　　　　　　　　　　　　　　　　　 | 周期同步间隔，如 `30m`；不大于 0 时不启动周期同步　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+
+启用 LDAP 后，初始化管理员仍写入管理用户表（来源 LOCAL），通过 `HUB_AUTH__ADMIN_USERNAME` / `HUB_AUTH__ADMIN_PASSWORD` 与管理端登录端点登录。LDAP 同步用户的显示名取 `givenName`，缺失时回退到 `uid`。
 
 如需使用 SQLite 本地开发，可直接运行后端镜像并挂载配置，无需 compose。前端镜像也可单独部署，通过 nginx 反向代理 `/api` 到后端服务地址。
 

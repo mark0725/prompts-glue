@@ -5,7 +5,7 @@ import { SystemLayout } from "@/app/SystemLayout";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { PackagesPage } from "@/features/packages/PackagesPage";
-import { UsersPage } from "@/features/users/UsersPage";
+import { WebUsersPage, ManagerUsersPage } from "@/features/users/UsersPage";
 import { DictsPage } from "@/features/dicts/DictsPage";
 import { RisksPage } from "@/features/risks/RisksPage";
 import { AuditPage } from "@/features/audit/AuditPage";
@@ -40,11 +40,12 @@ export default function App() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/packages" element={<PackagesPage />} />
-                  <Route path="/users" element={<UsersPage />} />
+                  <Route path="/users" element={<WebUsersPage />} />
                   <Route path="/risks" element={<RisksPage />} />
                   <Route path="/cache" element={<CachePage />} />
                   <Route path="/system" element={<SystemLayout />}>
-                    <Route index element={<Navigate to="/system/dicts" replace />} />
+                    <Route index element={<Navigate to="/system/manager-users" replace />} />
+                    <Route path="manager-users" element={<ManagerUsersPage />} />
                     <Route path="dicts" element={<DictsPage />} />
                     <Route path="roles" element={<RolesPage />} />
                     <Route path="ai-logs" element={<AILogsPage />} />

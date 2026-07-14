@@ -133,6 +133,7 @@
 | VERSION | 查看 CLI 版本和运行环境信息 |
 | PUBLISH | 发布提示词包到远程 server |
 | LOGIN | 登录远程 server |
+| TEMPLATE | 渲染模板文件，替换 `{{...}}` 占位符为提示词内容或表达式求值结果 |
 
 ## Server 数据库相关类型
 
@@ -152,12 +153,23 @@
 | PRIVATE | 私有资源，仅授权用户可访问 |
 | INTERNAL | 内部资源，仅指定命名空间或组织内可访问 |
 
-### 账号角色
+### 管理角色
+
+manager 域用户的管理角色由 RBAC 角色表维护（含权限与成员，见 app-manager.md），不由字典固定。`manager_role` 字典组（`ADMIN`）仅作 manager 用户记录的展示性默认标签，实际权限以角色-权限关系为准。
+
+### 权限代码
+
+管理端权限按 `资源:动作` 形式编码，按前缀分组，由权限表维护。内置权限包括：`user:read`、`user:write`、`user:token`、`role:read`、`role:write`、`dict:read`、`dict:write`、`config:read`、`config:write`、`risk:read`、`risk:write`、`audit:read`、`cache:read`、`cache:write`、`ldap:sync`、`generation:read`。
+
+### 账号来源
+
+用户账号的来源标识，取值通过 `account_source` 字典组加载。web 用户支持 LOCAL/LDAP/WEB，管理用户支持 LOCAL/LDAP。
 
 | 值 | 说明 |
 |---|---|
-| ADMIN | 管理员，拥有系统管理权限 |
-| USER | 普通用户，可发布和使用提示词 |
+| LOCAL | 本地账号，使用密码认证 |
+| LDAP | 从 LDAP 目录同步的账号，凭据由目录校验 |
+| WEB | Web 自助注册账号（预留，当前未启用注册流程） |
 
 ### 命名空间角色
 
