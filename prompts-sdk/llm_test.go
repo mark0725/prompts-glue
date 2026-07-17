@@ -74,8 +74,8 @@ func TestLLMExecutorHappyPath(t *testing.T) {
 	if len(gotBody.Messages) != 2 || gotBody.Messages[0].Role != "system" || gotBody.Messages[1].Role != "user" {
 		t.Fatalf("unexpected messages: %+v", gotBody.Messages)
 	}
-	if gotBody.Messages[0].Content != defaultSystemPrompts["summary"] {
-		t.Fatalf("system prompt not from bundled defaults")
+	if gotBody.Messages[0].Content != globalSystemPromptPrefix+defaultSystemPrompts["summary"] {
+		t.Fatalf("system prompt not from bundled defaults (with global prefix)")
 	}
 	wantUser := "额外要求：不超过两句\n\n第一段\n第二段"
 	if gotBody.Messages[1].Content != wantUser {
@@ -145,7 +145,7 @@ func TestLLMExecutorUsesOverriddenSystemPrompt(t *testing.T) {
 	if _, err := executor.ExecuteInstruction(context.Background(), InstructionRequest{Name: "summary", Inputs: []string{"x"}}); err != nil {
 		t.Fatalf("ExecuteInstruction: %v", err)
 	}
-	if gotBody.Messages[0].Content != "自定义系统提示词" {
-		t.Fatalf("expected overridden system prompt, got %q", gotBody.Messages[0].Content)
+	if gotBody.Messages[0].Content != globalSystemPromptPrefix+"自定义系统提示词" {
+		t.Fatalf("expected overridden system prompt (with global prefix), got %q", gotBody.Messages[0].Content)
 	}
 }

@@ -139,6 +139,7 @@ web 用户可在个人中心创建个人访问令牌（PAT），默认不过期�
 | ldap.user_filter | 用户搜索过滤式，默认 `(objectClass=person)` |
 | ldap.attribute | 用户名属性，默认 `uid` |
 | ldap.display_name_attribute | 展示名属性，默认 `givenName`，缺失时回退到用户名属性 |
+| ldap.filter | 账号名(uid)正则，匹配的才同步；为空则不过滤(全部同步) |
 | ldap.start_tls / ldap.ldaps / ldap.verify_host | StartTLS、LDAPS 与主机名校验开关 |
 | ldap.timeout | 连接超时，文本形式如 `10s` |
 | ldap.sync_targets | 同步目标表列表，可选 `manager`、`web`；默认仅 `["manager"]`，含 `web` 时也同步到 web 用户表 |

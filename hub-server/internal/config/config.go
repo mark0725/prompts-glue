@@ -116,6 +116,7 @@ type LDAPConfig struct {
 	UserFilter           string   `yaml:"user_filter" json:"user_filter" toml:"user_filter"`
 	Attribute            string   `yaml:"attribute" json:"attribute" toml:"attribute"`
 	DisplayNameAttribute string   `yaml:"display_name_attribute" json:"display_name_attribute" toml:"display_name_attribute"`
+	Filter               string   `yaml:"filter" json:"filter" toml:"filter"`
 	StartTLS             bool     `yaml:"start_tls" json:"start_tls" toml:"start_tls"`
 	LDAPS                bool     `yaml:"ldaps" json:"ldaps" toml:"ldaps"`
 	VerifyHost           bool     `yaml:"verify_host" json:"verify_host" toml:"verify_host"`

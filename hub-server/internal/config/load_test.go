@@ -161,14 +161,14 @@ func TestRegisterFlagsContains(t *testing.T) {
 
 func TestNamingTable(t *testing.T) {
 	want := map[string]struct{ env, flag string }{
-		"llm.model":                  {"HUB_LLM__MODEL", "llm-model"},
-		"llm.api_base":               {"HUB_LLM__API_BASE", "llm-api-base"},
-		"auth.token_ttl":             {"HUB_AUTH__TOKEN_TTL", "auth-token-ttl"},
-		"cache.ttl":                  {"HUB_CACHE__TTL", "cache-ttl"},
-		"limits.request_body_bytes":  {"HUB_LIMITS__REQUEST_BODY_BYTES", "limits-request-body-bytes"},
-		"limits.page_size_max":       {"HUB_LIMITS__PAGE_SIZE_MAX", "limits-page-size-max"},
-		"logging.level":              {"HUB_LOGGING__LEVEL", "logging-level"},
-		"server.public_base_url":     {"HUB_SERVER__PUBLIC_BASE_URL", "server-public-base-url"},
+		"llm.model":                 {"HUB_LLM__MODEL", "llm-model"},
+		"llm.api_base":              {"HUB_LLM__API_BASE", "llm-api-base"},
+		"auth.token_ttl":            {"HUB_AUTH__TOKEN_TTL", "auth-token-ttl"},
+		"cache.ttl":                 {"HUB_CACHE__TTL", "cache-ttl"},
+		"limits.request_body_bytes": {"HUB_LIMITS__REQUEST_BODY_BYTES", "limits-request-body-bytes"},
+		"limits.page_size_max":      {"HUB_LIMITS__PAGE_SIZE_MAX", "limits-page-size-max"},
+		"logging.level":             {"HUB_LOGGING__LEVEL", "logging-level"},
+		"server.public_base_url":    {"HUB_SERVER__PUBLIC_BASE_URL", "server-public-base-url"},
 	}
 	got := map[string]fieldDesc{}
 	for _, d := range describe() {

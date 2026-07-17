@@ -45,7 +45,7 @@ export function UserManager({ realm, title }: { realm: "web" | "manager"; title:
         <h1 className="text-xl font-bold text-foreground">{title}</h1>
         <div className="flex items-center gap-2">
           {realm === "manager" && (
-            <Button variant="outline" size="sm" onClick={() => api.syncLDAP().then((r) => toast(`同步完成：manager ${r.synced_manager} / web ${r.synced_web}${r.errors?.length ? `，失败 ${r.errors.length} 条` : ""}`, "success")).catch((e) => toast(e.message, "error"))}>
+            <Button variant="outline" size="sm" onClick={() => api.syncLDAP().then((r) => toast(`同步完成：manager ${r.synced_manager} / web ${r.synced_web}${r.skipped ? `，跳过 ${r.skipped} 条` : ""}${r.errors?.length ? `，失败 ${r.errors.length} 条` : ""}`, "success")).catch((e) => toast(e.message, "error"))}>
               <RefreshCw size={14} className="mr-1" /> LDAP 同步
             </Button>
           )}

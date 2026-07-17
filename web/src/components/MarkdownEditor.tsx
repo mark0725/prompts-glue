@@ -2,7 +2,8 @@ import MDEditor from "@uiw/react-md-editor";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/cn";
 import "@uiw/react-md-editor/markdown-editor.css";
-import "@uiw/react-markdown-preview/markdown.css";
+// 不导入 @uiw/react-markdown-preview/markdown.css：其 .wmde-markdown 元素样式 specificity
+// 高于 Tailwind typography 的 prose，会覆盖预览排版。预览改用与包详情一致的 prose 样式。
 
 export interface MarkdownEditorProps {
   value: string;
@@ -41,7 +42,7 @@ export function MarkdownEditor({
         height="100%"
         visibleDragbar={false}
         textareaProps={{ placeholder }}
-        previewOptions={{ remarkPlugins: [remarkGfm] }}
+        previewOptions={{ remarkPlugins: [remarkGfm], className: "markdown-body prose prose-sm max-w-none" }}
       />
     </div>
   );

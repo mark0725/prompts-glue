@@ -21,14 +21,23 @@ type LDAPVerifier interface {
 	BindVerify(ctx context.Context, dn, password string) error
 }
 
+// RoleChecker 检查用户是否具备管理端登录所需的角色，用于管理端登录门禁。由 internal/rbac.Service 实现。
+type RoleChecker interface {
+	HasAnyRole(userID string) bool
+}
+
+// ErrRoleRequired 表示管理端登录被拒：用户不属于任何角色（不在 manager 角色列表中）。
+var ErrRoleRequired = errors.New("manager login requires at least one role")
+
 type Service struct {
 	db   *gorm.DB
 	cfg  config.Config
 	ldap LDAPVerifier
+	rbac RoleChecker
 }
 
-func NewService(db *gorm.DB, cfg config.Config, verifier LDAPVerifier) *Service {
-	return &Service{db: db, cfg: cfg, ldap: verifier}
+func NewService(db *gorm.DB, cfg config.Config, verifier LDAPVerifier, rbac RoleChecker) *Service {
+	return &Service{db: db, cfg: cfg, ldap: verifier, rbac: rbac}
 }
 
 // EnsureAdmin 初始化管理端引导账号到 manager_users（本地来源、ADMIN 角色）。
@@ -105,6 +114,10 @@ func (s *Service) ManagerLogin(ctx context.Context, username, password, client s
 	}
 	if err := s.verifyPassword(ctx, mu.Source, mu.ExternalID, mu.PasswordHash, password); err != nil {
 		return "", nil, errors.New("invalid credentials")
+	}
+	// 管理端登录门禁：用户必须属于至少一个角色（不在 manager 角色列表中的用户不能登录）。
+	if s.rbac != nil && !s.rbac.HasAnyRole(mu.ID) {
+		return "", nil, ErrRoleRequired
 	}
 	token, err := s.issueToken(mu.ID, model.RealmManager, loginTokenName(client))
 	if err != nil {

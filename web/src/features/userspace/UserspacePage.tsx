@@ -211,7 +211,26 @@ function AccessTokens() {
     if (!ok) return;
     api.revokeToken(id).then(() => { toast("已吊销", "success"); load(); }).catch((e) => toast(e.message, "error"));
   };
-  const copy = (v: string) => { navigator.clipboard?.writeText(v).then(() => toast("已复制", "success")); };
+  const copy = async (v: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(v);
+      } else {
+        // 非安全上下文（如 http 经 IP 访问）兜底：临时 textarea + execCommand
+        const ta = document.createElement("textarea");
+        ta.value = v;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      toast("已复制", "success");
+    } catch {
+      toast("复制失败，请手动选择文本复制", "error");
+    }
+  };
 
   if (loading) return <div className="p-6 text-center"><Spinner /></div>;
   return (

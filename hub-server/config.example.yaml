@@ -42,6 +42,7 @@ ldap:
   user_filter: "(objectClass=person)"
   attribute: "uid"
   display_name_attribute: "givenName"
+  filter: ""                # 账号名(uid)正则，匹配的才同步；为空则不过滤(全部同步)
   start_tls: false
   ldaps: false
   verify_host: true

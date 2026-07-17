@@ -9,12 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"hub-server/internal/config"
 	"hub-server/internal/database"
+	"hub-server/internal/model"
 	"hub-server/internal/server"
 )
 
-func newApp(t *testing.T) (http.Handler, config.Config) {
+func newApp(t *testing.T) (http.Handler, *gorm.DB) {
 	t.Helper()
 	cfg := config.Default()
 	cfg.Database.DSN = ":memory:"
@@ -32,7 +35,7 @@ func newApp(t *testing.T) (http.Handler, config.Config) {
 	if err := app.Init(); err != nil {
 		t.Fatal(err)
 	}
-	return app.Handler(), cfg
+	return app.Handler(), db
 }
 
 func TestHealthLoginAndDicts(t *testing.T) {
@@ -42,6 +45,28 @@ func TestHealthLoginAndDicts(t *testing.T) {
 	managerToken := loginOK(t, handler, "/api/admin/auth/login", "admin", "secret-pass")
 	requireOK(t, handler, http.MethodGet, "/api/admin/manager-users", nil, managerToken)
 	requireOK(t, handler, http.MethodGet, "/api/dicts/prompt_type", nil, "")
+}
+
+// TestManagerLoginRoleGate 验证管理端登录门禁：属于任意角色的用户可登录，无任何角色的用户被拒（403）。
+func TestManagerLoginRoleGate(t *testing.T) {
+	handler, db := newApp(t)
+	adminToken := loginOK(t, handler, "/api/admin/auth/login", "admin", "secret-pass")
+	// 创建 operator 角色 + 一个属于该角色的 manager 用户 → 可登录（属于某角色）。
+	requireOK(t, handler, http.MethodPost, "/api/admin/roles", []byte(`{"code":"operator","name":"运营","enabled":true}`), adminToken)
+	requireOK(t, handler, http.MethodPost, "/api/admin/manager-users", []byte(`{"username":"ops","password":"opspass","role":"operator"}`), adminToken)
+	loginOK(t, handler, "/api/admin/auth/login", "ops", "opspass")
+	// 创建一个 manager 用户后，清除其所有角色成员关系 → 无任何角色 → 不能登录（403）。
+	requireOK(t, handler, http.MethodPost, "/api/admin/manager-users", []byte(`{"username":"norole","password":"p"}`), adminToken)
+	var norole model.ManagerUser
+	if err := db.Where("username = ?", "norole").First(&norole).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("user_id = ?", norole.ID).Delete(&model.RoleMember{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, handler, http.MethodPost, "/api/admin/auth/login", []byte(`{"username":"norole","password":"p"}`), "", http.StatusForbidden)
+	// bootstrap admin 仍可登录。
+	loginOK(t, handler, "/api/admin/auth/login", "admin", "secret-pass")
 }
 
 // TestRBACPATAndGenerate 验证 RBAC 种子（角色/权限）、PAT 管理、generate 需登录。

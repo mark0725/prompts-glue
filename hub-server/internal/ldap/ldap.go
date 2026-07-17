@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ var ErrDisabled = errors.New("ldap is disabled")
 type SyncStats struct {
 	SyncedManager int      `json:"synced_manager"`
 	SyncedWeb     int      `json:"synced_web"`
+	Skipped       int      `json:"skipped"` // 因 filter 正则不匹配而跳过的账号数
 	Errors        []string `json:"errors"`
 }
 
@@ -84,7 +86,16 @@ func (s *Service) Sync(ctx context.Context) (SyncStats, error) {
 	if !hasManager && !hasWeb {
 		hasManager = true // 默认同步到 manager
 	}
-	s.log.Info("ldap sync starting", "sync_targets", s.cfg.SyncTargets, "manager", hasManager, "web", hasWeb, "entries", len(entries))
+	// filter 正则：匹配账号名(username/attribute)，为空则不过滤（全部同步）。
+	var filterRe *regexp.Regexp
+	if strings.TrimSpace(s.cfg.Filter) != "" {
+		re, err := regexp.Compile(s.cfg.Filter)
+		if err != nil {
+			return stats, fmt.Errorf("compile ldap filter %q: %w", s.cfg.Filter, err)
+		}
+		filterRe = re
+	}
+	s.log.Info("ldap sync starting", "sync_targets", s.cfg.SyncTargets, "manager", hasManager, "web", hasWeb, "entries", len(entries), "filter", s.cfg.Filter)
 
 	for _, e := range entries {
 		select {
@@ -95,6 +106,11 @@ func (s *Service) Sync(ctx context.Context) (SyncStats, error) {
 		parsed, ok := parseEntry(e, s.cfg.Attribute, s.cfg.DisplayNameAttribute)
 		if !ok {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("skip entry without %q: dn=%s", s.cfg.Attribute, e.DN))
+			continue
+		}
+		// filter 为账号名正则；非空时只同步匹配的账号，不匹配则跳过。
+		if filterRe != nil && !filterRe.MatchString(parsed.Username) {
+			stats.Skipped++
 			continue
 		}
 		if hasManager {
@@ -112,7 +128,7 @@ func (s *Service) Sync(ctx context.Context) (SyncStats, error) {
 			stats.SyncedWeb++
 		}
 	}
-	s.log.Info("ldap sync completed", "manager", stats.SyncedManager, "web", stats.SyncedWeb, "errors", len(stats.Errors))
+	s.log.Info("ldap sync completed", "manager", stats.SyncedManager, "web", stats.SyncedWeb, "skipped", stats.Skipped, "errors", len(stats.Errors))
 	return stats, nil
 }
 

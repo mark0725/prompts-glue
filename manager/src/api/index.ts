@@ -60,7 +60,7 @@ export const api = {
     request<{ reset: boolean }>(`/api/admin/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
   resetManagerPassword: (id: string, password: string) =>
     request<{ reset: boolean }>(`/api/admin/manager-users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
-  syncLDAP: () => request<{ synced_manager: number; synced_web: number; errors: string[] }>("/api/admin/ldap/sync", { method: "POST" }),
+  syncLDAP: () => request<{ synced_manager: number; synced_web: number; skipped: number; errors: string[] }>("/api/admin/ldap/sync", { method: "POST" }),
   roles: () => request<Role[]>("/api/admin/roles"),
   rbacRole: (id: string) => request<RoleDetail>(`/api/admin/roles/${id}`),
   createRole: (body: { code: string; name: string; description?: string; enabled: boolean }) =>

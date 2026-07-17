@@ -46,7 +46,7 @@ func newAuthDB(t *testing.T) *gorm.DB {
 func TestManagerLoginLocalSource(t *testing.T) {
 	db := newAuthDB(t)
 	cfg := config.Default()
-	svc := NewService(db, cfg, &stubVerifier{})
+	svc := NewService(db, cfg, &stubVerifier{}, nil)
 
 	hash, _ := HashPassword("pass123")
 	mu := model.ManagerUser{Username: "ops", PasswordHash: hash, Status: "ACTIVE", Source: model.SourceLocal, Role: model.RoleAdmin}
@@ -68,7 +68,7 @@ func TestManagerLoginLDAPSource(t *testing.T) {
 	db := newAuthDB(t)
 	cfg := config.Default()
 	verifier := &stubVerifier{failDN: "uid=blocked,dc=test,dc=com"}
-	svc := NewService(db, cfg, verifier)
+	svc := NewService(db, cfg, verifier, nil)
 
 	mu := model.ManagerUser{Username: "ldapu", Source: model.SourceLDAP, ExternalID: "uid=ldapu,dc=test,dc=com", Status: "ACTIVE", Role: model.RoleAdmin}
 	if err := db.Create(&mu).Error; err != nil {
@@ -94,7 +94,7 @@ func TestManagerLoginLDAPSource(t *testing.T) {
 func TestAuthenticateRealmDispatch(t *testing.T) {
 	db := newAuthDB(t)
 	cfg := config.Default()
-	svc := NewService(db, cfg, &stubVerifier{})
+	svc := NewService(db, cfg, &stubVerifier{}, nil)
 
 	hash, _ := HashPassword("p")
 	wu := model.User{Username: "webu", PasswordHash: hash, Status: "ACTIVE", Source: model.SourceLocal}

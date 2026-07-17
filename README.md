@@ -191,6 +191,8 @@ hub-server 配置规范：配置文件支持 YAML/JSON/TOML（按扩展名识别
 | `HUB_LDAP__SYNC_TARGETS__0`　　　　　　　　　　　　　　　　 | 同步目标数组首元素，可选 `manager`、`web`（也接受带尾 `__` 的 `__0__` 写法）。环境变量数组会整体覆盖默认值，要同时同步 manager 与 web 需设置 `HUB_LDAP__SYNC_TARGETS__0=manager` 与 `HUB_LDAP__SYNC_TARGETS__1=web` |
 | `HUB_LDAP__SYNC_INTERVAL`　　　　　　　　　　　　　　　　　 | 周期同步间隔，如 `30m`；不大于 0 时不启动周期同步　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
 
+| `HUB_LDAP__FILTER` | 账号名(uid)正则，匹配的才同步；为空则不过滤(全部同步) |
+
 启用 LDAP 后，初始化管理员仍写入管理用户表（来源 LOCAL），通过 `HUB_AUTH__ADMIN_USERNAME` / `HUB_AUTH__ADMIN_PASSWORD` 与管理端登录端点登录。LDAP 同步用户的显示名取 `givenName`，缺失时回退到 `uid`。
 
 如需使用 SQLite 本地开发，可直接运行后端镜像并挂载配置，无需 compose。前端镜像也可单独部署，通过 nginx 反向代理 `/api` 到后端服务地址。

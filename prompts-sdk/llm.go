@@ -113,14 +113,20 @@ func (e *llmExecutor) ExecuteInstruction(ctx context.Context, req InstructionReq
 	}, nil
 }
 
+// globalSystemPromptPrefix 统一前置指令：要求 LLM 直接输出结果内容，不附加解释/描述/前后缀，
+// 便于结果作为下游工具的输入直接使用。应用于所有制作指令的 LLM 调用。
+const globalSystemPromptPrefix = "本输出作为其他工具的输入，直接输出结果内容，不要描述。\n\n"
+
 func (e *llmExecutor) systemPrompt(name string) string {
+	base := ""
 	if p, ok := e.cfg.SystemPrompts[name]; ok && p != "" {
-		return p
+		base = p
+	} else if p, ok := defaultSystemPrompts[name]; ok && p != "" {
+		base = p
+	} else {
+		base = "你是一名提示词处理助手，请按指令要求处理输入内容，保留关键约束和事实依据，不得编造输入中不存在的重要信息。"
 	}
-	if p, ok := defaultSystemPrompts[name]; ok && p != "" {
-		return p
-	}
-	return "你是一名提示词处理助手，请按指令要求处理输入内容，保留关键约束和事实依据，不得编造输入中不存在的重要信息。"
+	return globalSystemPromptPrefix + base
 }
 
 // buildLLMUserMessage 组装用户消息：用户特别提示词（指令 {} 内容）作为额外要求前缀，随后拼接输入内容。
@@ -140,7 +146,7 @@ var defaultSystemPrompts = map[string]string{
 	"tags":      "你是提示词标签生成助手。请根据输入内容生成适合检索、分类和推荐的标签，标签应短小、稳定、可复用，避免过细、重复或带有临时上下文的信息。",
 	"labels":    "你是内容标注助手。请为输入内容增加清晰标注，标明主题、用途、适用场景、关键约束和注意事项。标注应帮助后续理解和检索，不改变原文核心含义。",
 	"summary":   "你是摘要生成助手。请压缩输入内容并保留核心目标、关键规则、限制条件和结论。摘要应准确、简洁、层次清楚，不引入原文之外的信息。",
-	"merge":     "你是提示词合并助手。请按输入顺序合并内容，保留各部分有效信息，消除重复表达，处理明显冲突并说明取舍，输出连贯一致的提示词内容。",
+	"merge":     "你是提示词合并助手。请按输入顺序合并内容，保留各部分有效信息，消除重复表达，处理明显冲突并说明取舍，输出连贯一致的提示词内容。保持原来的排版结构。",
 	"title":     "你是标题生成助手。请为输入内容生成简短、准确、可检索的标题。标题应体现核心主题和用途，避免夸张、含糊或过长。",
 	"bullets":   "你是要点整理助手。请将输入内容整理为层次清楚的要点，保留关键动作、约束、决策和注意事项。要点应简洁、可执行、避免重复。",
 	"clean":     "你是文本清洗助手。请清理输入中的噪声、无效格式、重复符号和明显无关内容，保留有业务意义的信息。不得改变原文的关键意图和约束。",

@@ -494,11 +494,11 @@ func (s *RegistryService) Cache(page int, pageSize int) (Page[model.CalculationC
 }
 
 func (s *RegistryService) ClearCache(expiredOnly bool) error {
-	query := s.db.Model(&model.CalculationCache{})
 	if expiredOnly {
-		query = query.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now().UTC())
+		return s.db.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now().UTC()).Delete(&model.CalculationCache{}).Error
 	}
-	return query.Delete(&model.CalculationCache{}).Error
+	// gorm 默认禁止无 WHERE 的全表删除，清理全部需显式开启 AllowGlobalUpdate。
+	return s.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.CalculationCache{}).Error
 }
 
 func (s *RegistryService) runExpression(ctx context.Context, req GenerateRequest, user *model.Principal) (GenerateResponse, error) {

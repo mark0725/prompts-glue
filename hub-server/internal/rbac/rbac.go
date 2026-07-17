@@ -104,13 +104,23 @@ func (s *Service) seedAdminRole() error {
 	return nil
 }
 
-// AssignAdminRole 确保指定 manager 用户拥有 admin 角色成员关系。
-func (s *Service) AssignAdminRole(managerUserID string) error {
+// HasAnyRole 返回用户是否为任意已启用角色的成员（管理端登录门禁：无任何角色的用户不能登录管理端）。
+func (s *Service) HasAnyRole(userID string) bool {
+	var count int64
+	err := s.db.Table("role_members").
+		Joins("JOIN roles ON roles.id = role_members.role_id").
+		Where("role_members.user_id = ? AND roles.enabled = ?", userID, true).
+		Count(&count).Error
+	return err == nil && count > 0
+}
+
+// AssignRole 按角色 code 为用户建立角色成员关系（已存在则跳过）。
+func (s *Service) AssignRole(userID, roleCode string) error {
 	var role model.Role
-	if err := s.db.Where("code = ?", RoleCodeAdmin).First(&role).Error; err != nil {
+	if err := s.db.Where("code = ?", roleCode).First(&role).Error; err != nil {
 		return err
 	}
-	member := model.RoleMember{RoleID: role.ID, UserID: managerUserID}
+	member := model.RoleMember{RoleID: role.ID, UserID: userID}
 	if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&member).Error; err != nil {
 		return err
 	}

@@ -48,15 +48,16 @@ type Server struct {
 
 func New(cfg config.Config, db *gorm.DB, logger *slog.Logger) *Server {
 	syncer := ldap.NewService(cfg.LDAP, db, logger)
+	rbacSvc := rbac.NewService(db, logger)
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
 		logger:   logger,
-		auth:     auth.NewService(db, cfg, syncer),
+		auth:     auth.NewService(db, cfg, syncer, rbacSvc),
 		registry: service.NewRegistryService(db, cfg),
 		dicts:    service.NewDictService(db),
 		syncer:   syncer,
-		rbacSvc:  rbac.NewService(db, logger),
+		rbacSvc:  rbacSvc,
 	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.handler = s.routes()
@@ -152,7 +153,7 @@ func (s *Server) Init() error {
 	if s.cfg.Auth.AdminPassword != "" {
 		var admin model.ManagerUser
 		if err := s.db.Where("username = ?", s.cfg.Auth.AdminUsername).First(&admin).Error; err == nil {
-			if err := s.rbacSvc.AssignAdminRole(admin.ID); err != nil {
+			if err := s.rbacSvc.AssignRole(admin.ID, rbac.RoleCodeAdmin); err != nil {
 				s.logger.Warn("assign admin role failed", "error", err)
 			}
 		}
@@ -240,6 +241,10 @@ func (s *Server) managerLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken, p, err := s.auth.ManagerLogin(r.Context(), req.Username, req.Password, req.Client)
 	if err != nil {
+		if errors.Is(err, auth.ErrRoleRequired) {
+			api.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err)
+			return
+		}
 		api.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", err)
 		return
 	}
@@ -765,6 +770,10 @@ func (s *Server) createManagerUser(w http.ResponseWriter, r *http.Request, actor
 	if err := s.db.Create(&mu).Error; err != nil {
 		api.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err)
 		return
+	}
+	// 建立所选角色成员关系：管理端登录门禁要求用户至少属于一个角色，故按创建时选定的角色赋予成员关系。
+	if err := s.rbacSvc.AssignRole(mu.ID, role); err != nil {
+		s.logger.Warn("assign role on create manager user failed", "user", mu.ID, "role", role, "error", err)
 	}
 	s.recordAudit(r, actor, "MANAGER_USER_CREATE", "manager_user", mu.ID, "SUCCESS", "create local manager user "+req.Username)
 	mu.PasswordHash = ""
