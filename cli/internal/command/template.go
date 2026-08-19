@@ -63,9 +63,13 @@ func newTemplateCommand(root *rootOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := renderTemplate(cmd.Context(), input, vars, ev)
+			res, err := promptssdk.RenderTemplate(cmd.Context(), input, vars, ev)
 			if err != nil {
 				return err
+			}
+			result := templateOutput{Content: res.Content, Tokens: templateTokens{Input: res.TokenUsage.Input, Output: res.TokenUsage.Output, Total: res.TokenUsage.Total}}
+			for _, dep := range res.Dependencies {
+				result.Dependencies = append(result.Dependencies, templateDependency{Name: dep.Name, VersionRule: dep.VersionRule})
 			}
 			return writeTemplateOutput(cmd.OutOrStdout(), root.output, result)
 		},
@@ -120,35 +124,19 @@ func writeTemplateOutput(w io.Writer, format string, result templateOutput) erro
 	}
 }
 
-// expressionEvaluator 求值单个 glue 表达式，返回内容、依赖与 token 消耗。
-// 本地模式用 SDK（本地 repository 加载与本地 LLM 执行）；远程模式委托 server 端 generate。
-type expressionEvaluator interface {
-	evaluate(ctx context.Context, expr string, vars map[string]string) (evalResult, error)
-}
-
-type evalResult struct {
-	Content      string
-	Dependencies []templateDependency
-	Tokens       templateTokens
-}
-
-// localEvaluator 用 SDK 在本地求值表达式。
+// localEvaluator 用 SDK 在本地求值表达式（本地 repository 加载与本地 LLM 执行）。
 type localEvaluator struct {
 	loader   promptssdk.ContentLoader
 	executor promptssdk.InstructionExecutor
 }
 
-func (e localEvaluator) evaluate(ctx context.Context, expr string, vars map[string]string) (evalResult, error) {
+func (e localEvaluator) Evaluate(ctx context.Context, expr string, vars map[string]string) (promptssdk.TemplateEvalResult, error) {
 	sdk := promptssdk.New()
 	run, err := sdk.Run(ctx, promptssdk.RunRequest{Expression: expr, Context: vars, ContentLoader: e.loader, InstructionExecutor: e.executor})
 	if err != nil {
-		return evalResult{}, err
+		return promptssdk.TemplateEvalResult{}, err
 	}
-	out := evalResult{Content: run.Content, Tokens: templateTokens{Input: run.Calculation.TokenUsage.Input, Output: run.Calculation.TokenUsage.Output, Total: run.Calculation.TokenUsage.Total}}
-	for _, dep := range run.Dependencies {
-		out.Dependencies = append(out.Dependencies, templateDependency{Name: dep.Name, VersionRule: dep.VersionRule})
-	}
-	return out, nil
+	return promptssdk.TemplateEvalResult{Content: run.Content, Dependencies: run.Dependencies, TokenUsage: run.Calculation.TokenUsage}, nil
 }
 
 // remoteEvaluator 委托 server 端 generate 求值表达式（远程模式不需本地 LLM 与本地 repository）。
@@ -156,20 +144,20 @@ type remoteEvaluator struct {
 	client *RemoteClient
 }
 
-func (e remoteEvaluator) evaluate(ctx context.Context, expr string, vars map[string]string) (evalResult, error) {
+func (e remoteEvaluator) Evaluate(ctx context.Context, expr string, vars map[string]string) (promptssdk.TemplateEvalResult, error) {
 	resp, err := e.client.generate(ctx, expr, vars)
 	if err != nil {
-		return evalResult{}, err
+		return promptssdk.TemplateEvalResult{}, err
 	}
-	out := evalResult{Content: resp.Content, Tokens: templateTokens{Input: resp.Calculation.TokenUsage.Input, Output: resp.Calculation.TokenUsage.Output, Total: resp.Calculation.TokenUsage.Total}}
+	deps := make([]promptssdk.DependencyRef, 0, len(resp.Dependencies))
 	for _, dep := range resp.Dependencies {
-		out.Dependencies = append(out.Dependencies, templateDependency{Name: dep.Name, VersionRule: dep.VersionRule})
+		deps = append(deps, promptssdk.DependencyRef{Name: dep.Name, VersionRule: dep.VersionRule})
 	}
-	return out, nil
+	return promptssdk.TemplateEvalResult{Content: resp.Content, Dependencies: deps, TokenUsage: resp.Calculation.TokenUsage}, nil
 }
 
 // newTemplateEvaluator 按本地/远程模式构造模板求值器。远程模式需已配置访问令牌（glue login 或 server.token）。
-func newTemplateEvaluator(cfg Config) (expressionEvaluator, error) {
+func newTemplateEvaluator(cfg Config) (promptssdk.TemplateEvaluator, error) {
 	if cfg.Local {
 		return localEvaluator{loader: NewRepository(cfg.Repository.Path).Loader(), executor: llmExecutor(cfg)}, nil
 	}
@@ -181,91 +169,4 @@ func newTemplateEvaluator(cfg Config) (expressionEvaluator, error) {
 		return nil, err
 	}
 	return remoteEvaluator{client: client}, nil
-}
-
-// renderTemplate 扫描 input，把每个 {{...}} 占位符内部作为 glue 表达式交给求值器求值并替换。
-// 扫描正确处理占位符内的字符串字面量（其中的 }} 不触发闭合）与指令 option 的花括号深度，
-// 因此不使用正则（正则会误截断字面量内的 }} 或 option 的 }）。
-// 任一占位符解析或求值失败即返回错误（严格模式）。
-func renderTemplate(ctx context.Context, input string, vars map[string]string, ev expressionEvaluator) (templateOutput, error) {
-	var out strings.Builder
-	result := templateOutput{}
-	i := 0
-	for i < len(input) {
-		if i+1 < len(input) && input[i] == '{' && input[i+1] == '{' {
-			start := i
-			i += 2
-			var expr strings.Builder
-			braceDepth := 0
-			inString := false
-			closed := false
-			for i < len(input) {
-				ch := input[i]
-				if inString {
-					// 字符串字面量内保留原文，处理 \" 转义使其中的 " 不结束字符串。
-					if ch == '\\' && i+1 < len(input) {
-						expr.WriteByte(ch)
-						expr.WriteByte(input[i+1])
-						i += 2
-						continue
-					}
-					expr.WriteByte(ch)
-					if ch == '"' {
-						inString = false
-					}
-					i++
-					continue
-				}
-				switch ch {
-				case '"':
-					inString = true
-					expr.WriteByte(ch)
-					i++
-				case '{':
-					braceDepth++
-					expr.WriteByte(ch)
-					i++
-				case '}':
-					switch {
-					case braceDepth > 0:
-						braceDepth--
-						expr.WriteByte(ch)
-						i++
-					case i+1 < len(input) && input[i+1] == '}':
-						i += 2
-						closed = true
-					default:
-						return templateOutput{}, fmt.Errorf("template placeholder at %d has unmatched '}'", start)
-					}
-				default:
-					expr.WriteByte(ch)
-					i++
-				}
-				if closed {
-					break
-				}
-			}
-			if !closed {
-				return templateOutput{}, fmt.Errorf("template placeholder at %d not closed, expected }}", start)
-			}
-			exprStr := strings.TrimSpace(expr.String())
-			if exprStr == "" {
-				return templateOutput{}, fmt.Errorf("template placeholder at %d is empty", start)
-			}
-			run, err := ev.evaluate(ctx, exprStr, vars)
-			if err != nil {
-				return templateOutput{}, fmt.Errorf("template placeholder {{ %s }} at %d: %w", exprStr, start, err)
-			}
-			out.WriteString(run.Content)
-			result.Dependencies = append(result.Dependencies, run.Dependencies...)
-			result.Tokens.Input += run.Tokens.Input
-			result.Tokens.Output += run.Tokens.Output
-			result.Tokens.Total += run.Tokens.Total
-			continue
-		}
-		out.WriteByte(input[i])
-		i++
-	}
-	result.Content = out.String()
-	return result, nil
 }

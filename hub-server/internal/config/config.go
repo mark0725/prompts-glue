@@ -97,6 +97,7 @@ type LimitsConfig struct {
 	PageSizeMax      int   `yaml:"page_size_max" json:"page_size_max" toml:"page_size_max"`
 	ExpressionLength int   `yaml:"expression_length" json:"expression_length" toml:"expression_length"`
 	DependencyDepth  int   `yaml:"dependency_depth" json:"dependency_depth" toml:"dependency_depth"`
+	TemplateLength   int   `yaml:"template_length" json:"template_length" toml:"template_length"`
 }
 
 type LoggingConfig struct {
@@ -131,7 +132,7 @@ func Default() Config {
 		Database: DatabaseConfig{Driver: "sqlite", DSN: "hub-server.db"},
 		Auth:     AuthConfig{TokenTTL: Duration(24 * time.Hour), AdminUsername: "admin"},
 		Cache:    CacheConfig{DefaultStrategy: "VERSIONED", TTL: Duration(time.Hour)},
-		Limits:   LimitsConfig{RequestBodyBytes: 1 << 20, PageSizeMax: 100, ExpressionLength: 20000, DependencyDepth: 16},
+		Limits:   LimitsConfig{RequestBodyBytes: 1 << 20, PageSizeMax: 100, ExpressionLength: 20000, DependencyDepth: 16, TemplateLength: 1 << 18},
 		Logging:  LoggingConfig{Level: "info"},
 		LDAP: LDAPConfig{
 			Attribute:            "uid",

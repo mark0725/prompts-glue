@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -176,6 +177,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/registry/dependencies/resolve", s.resolveDependencies)
 	mux.HandleFunc("/api/registry/parse", s.parseExpr)
 	mux.Handle("/api/registry/generate", s.requireAuth(http.HandlerFunc(s.generate)))
+	mux.Handle("/api/registry/template", s.requireAuth(http.HandlerFunc(s.renderTemplate)))
 	mux.Handle("/api/registry/cache", s.requireAuth(http.HandlerFunc(s.cache)))
 	mux.Handle("/api/registry/my-packages", s.requireAuth(http.HandlerFunc(s.myPackages)))
 	mux.Handle("/api/registry/my-generations", s.requireAuth(http.HandlerFunc(s.myGenerations)))
@@ -437,6 +439,42 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.registry.Generate(r.Context(), req, CurrentUser(r))
 	writeRegistryResult(w, r, result, err)
+}
+
+// renderTemplate 渲染模板：请求体为纯文本模板，逐 {{...}} 占位符生成后以纯文本返回渲染结果，
+// 与 glue CLI 的 template 命令输出一致；上下文变量经 var.<key>=<value> 查询参数传入
+// （等价于 glue CLI 的 --var key=value）。失败时仍返回统一 JSON 错误，便于客户端识别。
+func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		api.WriteError(w, r, http.StatusMethodNotAllowed, "INVALID_REQUEST", errors.New("method not allowed"))
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		api.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err)
+		return
+	}
+	result, err := s.registry.Template(r.Context(), service.TemplateRequest{Template: string(body), Inputs: templateQueryVars(r)}, CurrentUser(r))
+	if err != nil {
+		api.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(result.Content))
+}
+
+// templateQueryVars 从查询参数收集上下文变量：var.<key>=<value>，同键取最后一个（等价于 --var 覆盖）。
+func templateQueryVars(r *http.Request) map[string]string {
+	vars := make(map[string]string)
+	for key, vals := range r.URL.Query() {
+		if strings.HasPrefix(key, "var.") && len(vals) > 0 {
+			if name := strings.TrimPrefix(key, "var."); name != "" {
+				vars[name] = vals[len(vals)-1]
+			}
+		}
+	}
+	return vars
 }
 
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) {

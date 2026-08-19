@@ -176,3 +176,63 @@ func requireStatus(t *testing.T, handler http.Handler, method string, path strin
 	}
 	return resp
 }
+
+// doTemplate POST 纯文本模板到 template 端点，返回 recorder 以便检查原始文本响应。
+func doTemplate(t *testing.T, handler http.Handler, token, path string, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	if body != nil {
+		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
+
+// TestTemplateEndpoint 验证 template 端点：纯文本进 / 纯文本出，与 glue template 命令一致；
+// 未登录 401，字面量占位符渲染，var.<key> 查询参数等价于 --var。
+func TestTemplateEndpoint(t *testing.T) {
+	handler, _ := newApp(t)
+	managerToken := loginOK(t, handler, "/api/admin/auth/login", "admin", "secret-pass")
+	requireOK(t, handler, http.MethodPost, "/api/admin/users", []byte(`{"username":"webu","password":"webpass"}`), managerToken)
+	webToken := loginOK(t, handler, "/api/registry/auth/login", "webu", "webpass")
+
+	// 1) 未登录 401。
+	if rr := doTemplate(t, handler, "", "/api/registry/template", []byte(`{{ "hi" }}`)); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 2) 字面量占位符：纯文本进，渲染纯文本出。
+	rr := doTemplate(t, handler, webToken, "/api/registry/template", []byte("前缀 {{ \"hi\" }} 后缀"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "前缀 hi 后缀" {
+		t.Fatalf("rendered content = %q, want %q", got, "前缀 hi 后缀")
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "text/markdown; charset=utf-8" {
+		t.Fatalf("content-type = %q", ct)
+	}
+
+	// 3) var.<key> 查询参数等价于 glue --var。
+	rr = doTemplate(t, handler, webToken, "/api/registry/template?var.who=glue", []byte("Hello {{ $who }}"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "Hello glue" {
+		t.Fatalf("rendered content = %q, want %q", got, "Hello glue")
+	}
+
+	// 4) 空模板 400。
+	if rr := doTemplate(t, handler, webToken, "/api/registry/template", []byte("   ")); rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty template, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 5) 严格模式：非法表达式 400。
+	if rr := doTemplate(t, handler, webToken, "/api/registry/template", []byte("{{ !!! }}")); rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid expression, got %d: %s", rr.Code, rr.Body.String())
+	}
+}

@@ -101,6 +101,7 @@ Package 属性与 [prompts.md](prompts.md) 中的“Package 属性”保持一�
 | POST | `/resolve` | 解析包名和版本规则 |
 | POST | `/dependencies/resolve` | 解析 expression 依赖图 |
 | POST | `/generate` | 根据 expression 实时生成提示词 |
+| POST | `/template` | 渲染整段模板，逐 `{{...}}` 占位符生成并组装（纯文本进 / 纯文本出） |
 | GET | `/cache` | 查看服务端计算缓存信息 |
 | DELETE | `/cache` | 清理服务端计算缓存 |
 | GET | `/health` | 查看 Registry 服务状态 |
@@ -418,6 +419,42 @@ registry 认证接口面向 web 域用户，签发 WEB 域访问令牌。管理�
 
 实时生成应优先使用短期缓存。包含敏感内容、超大文本或不可缓存标记的请求不应写入共享缓存。
 
+## 模板渲染接口
+
+### 渲染模板
+
+| 项目 | 说明 |
+|---|---|
+| 方法 | POST |
+| 路径 | `/api/registry/template` |
+| 认证 | 需要（任意已认证令牌，WEB 或 MANAGER） |
+| 用途 | 渲染整段模板，功能与 `glue template` 命令等价；供 CLI、Web 及脚本直接渲染模板而无需各自实现占位符扫描 |
+
+请求约定：
+
+- 请求体为**纯文本模板**，不包裹 JSON。客户端可直接以文件内容作为请求体，例如 `curl --data-binary @template.md`。
+- 请求体大小受 `limits.request_body_bytes` 约束，模板长度受 `limits.template_length` 约束。
+- 上下文变量经查询参数传入：`var.<key>=<value>`（同键取最后一个），等价于 `glue template --var key=value`。
+
+渲染规则：
+
+- 模板中的 `{{...}}` 占位符内部为 glue 表达式（提示词引用、字面量、变量、制作指令与组合运算符）。
+- 服务端逐占位符独立调用「实时生成」求值并回填组装，每个占位符各自计缓存与 generation 记录；token 消耗记在登录用户下。
+- 采用严格模式：任一占位符解析或求值失败即终止。
+
+响应约定：
+
+- 成功：直接返回渲染后的**纯文本**正文，`Content-Type: text/markdown; charset=utf-8`，不使用统一 JSON 外壳。
+- 失败：返回统一 JSON 错误对象（如 401 未认证、400 模板为空 / 表达式非法 / 模板过长），便于客户端识别。
+
+示例：
+
+```bash
+curl -s -X POST http://<host>/api/registry/template \
+  -H "Authorization: Bearer <token>" \
+  --data-binary @template.md
+```
+
 ## 缓存接口
 
 ### 查看缓存信息
@@ -481,6 +518,7 @@ registry 认证接口面向 web 域用户，签发 WEB 域访问令牌。管理�
 | add | 搜索包、查看版本详情、下载版本内容、解析版本规则 |
 | upgrade | 搜索包、解析版本规则、下载版本内容 |
 | create | 本地创建时不访问 Registry；非本地且保存远程草稿时使用发布或生成接口 |
+| template | 本地模式用 SDK 本地求值；远程模式逐 `{{...}}` 占位符调用实时生成（服务端 `/template` 提供等价的整模板渲染） |
 | cache | 查看缓存信息、清理缓存 |
 | info | 查看包概要、查看版本详情、当前身份 |
 | publish | 发布包版本、解析依赖图 |
