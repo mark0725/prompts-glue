@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,19 +34,18 @@ var (
 )
 
 type Server struct {
-	cfg        config.Config
-	db         *gorm.DB
-	logger     *slog.Logger
-	auth       *auth.Service
-	registry   *service.RegistryService
-	dicts      *service.DictService
-	syncer     *ldap.Service
-	rbacSvc    *rbac.Service
-	handler    http.Handler
-	httpServer *http.Server
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
+	cfg      config.Config
+	db       *gorm.DB
+	logger   *slog.Logger
+	auth     *auth.Service
+	registry *service.RegistryService
+	dicts    *service.DictService
+	syncer   *ldap.Service
+	rbacSvc  *rbac.Service
+	handler  http.Handler
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 func New(cfg config.Config, db *gorm.DB, logger *slog.Logger) *Server {
@@ -65,32 +66,93 @@ func New(cfg config.Config, db *gorm.DB, logger *slog.Logger) *Server {
 	return s
 }
 
+// listenerSpec 描述一个监听端口及其处理程序。
+type listenerSpec struct {
+	name    string
+	address string
+	handler http.Handler
+}
+
 func (s *Server) Start() error {
 	if err := s.Init(); err != nil {
 		return err
 	}
+	specs, err := s.listenerSpecs()
+	if err != nil {
+		return err
+	}
+	// 先完成全部端口绑定，任一端口失败时关闭已绑定端口并终止启动。
+	type boundServer struct {
+		name string
+		ln   net.Listener
+		srv  *http.Server
+	}
+	bound := make([]boundServer, 0, len(specs))
+	for _, spec := range specs {
+		ln, err := net.Listen("tcp", spec.address)
+		if err != nil {
+			for _, b := range bound {
+				_ = b.ln.Close()
+			}
+			return fmt.Errorf("%s listen %s: %w", spec.name, spec.address, err)
+		}
+		bound = append(bound, boundServer{name: spec.name, ln: ln, srv: &http.Server{
+			Addr:              spec.address,
+			Handler:           spec.handler,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+		}})
+	}
 	s.startLDAPSync()
-	s.httpServer = &http.Server{Addr: s.cfg.Server.Address, Handler: s.handler}
-	s.logger.Info("hub-server listening", "address", s.cfg.Server.Address)
-	errCh := make(chan error, 1)
-	go func() { errCh <- s.httpServer.ListenAndServe() }()
+	errCh := make(chan error, len(bound))
+	for _, b := range bound {
+		s.logger.Info("hub-server listening", "name", b.name, "address", b.ln.Addr().String())
+		go func(b boundServer) {
+			if err := b.srv.Serve(b.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("%s server: %w", b.name, err)
+			}
+		}(b)
+	}
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	var runErr error
 	select {
-	case err := <-errCh:
-		s.cancel()
-		return err
+	case runErr = <-errCh:
+		s.logger.Error("http server failed", "error", runErr)
 	case <-sigCh:
 		s.logger.Info("hub-server shutting down")
 	}
 	s.cancel()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
-		s.logger.Error("http shutdown error", "error", err)
+	for _, b := range bound {
+		if err := b.srv.Shutdown(shutdownCtx); err != nil {
+			s.logger.Error("http shutdown error", "name", b.name, "error", err)
+		}
 	}
 	s.wg.Wait()
-	return nil
+	return runErr
+}
+
+// listenerSpecs 构建 API、Web、Manager 三个端口的处理程序。
+// Web 端口仅暴露 registry/dicts API，Manager 端口暴露完整 API，主端口始终提供完整 API。
+func (s *Server) listenerSpecs() ([]listenerSpec, error) {
+	specs := []listenerSpec{{name: "api", address: s.cfg.Server.Address, handler: s.handler}}
+	if s.cfg.Web.Enable {
+		webHandler, err := newSPAHandler(s.cfg.Web.Dir, s.newMux(false))
+		if err != nil {
+			return nil, fmt.Errorf("web ui: %w", err)
+		}
+		specs = append(specs, listenerSpec{name: "web", address: s.cfg.Web.Address, handler: s.withMiddleware(webHandler)})
+	}
+	if s.cfg.Manager.Enable {
+		managerHandler, err := newSPAHandler(s.cfg.Manager.Dir, s.newMux(true))
+		if err != nil {
+			return nil, fmt.Errorf("manager ui: %w", err)
+		}
+		specs = append(specs, listenerSpec{name: "manager", address: s.cfg.Manager.Address, handler: s.withMiddleware(managerHandler)})
+	}
+	return specs, nil
 }
 
 // startLDAPSync 在 LDAP 启用时启动同步：先立即同步一次，再按周期定时同步。
@@ -167,7 +229,29 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes() http.Handler {
+	return s.withMiddleware(s.newMux(true))
+}
+
+func (s *Server) withMiddleware(handler http.Handler) http.Handler {
+	handler = bodyLimitMiddleware(s.cfg.Limits.RequestBodyBytes, handler)
+	handler = loggingMiddleware(s.logger, handler)
+	handler = requestIDMiddleware(handler)
+	return handler
+}
+
+// newMux 注册 API 路由。includeAdmin=false 时只注册 registry 与字典 API，
+// 用于 Web 端口；Manager 端口与主端口使用完整 API。
+func (s *Server) newMux(includeAdmin bool) *http.ServeMux {
 	mux := http.NewServeMux()
+	s.registerRegistryRoutes(mux)
+	s.registerDictRoutes(mux)
+	if includeAdmin {
+		s.registerAdminRoutes(mux)
+	}
+	return mux
+}
+
+func (s *Server) registerRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/registry/health", s.health)
 	mux.HandleFunc("/api/registry/auth/login", s.webLogin)
 	mux.Handle("/api/registry/auth/me", s.requireRealm(model.RealmWeb, http.HandlerFunc(s.me)))
@@ -185,16 +269,17 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/api/registry/my-stars", s.requireAuth(http.HandlerFunc(s.myStars)))
 	mux.Handle("/api/registry/tokens", s.requireRealm(model.RealmWeb, http.HandlerFunc(s.tokenRoutes)))
 	mux.Handle("/api/registry/tokens/", s.requireRealm(model.RealmWeb, http.HandlerFunc(s.tokenRoutes)))
+}
+
+func (s *Server) registerDictRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/dicts", s.dictAll)
 	mux.HandleFunc("/api/dicts/", s.dictGroup)
+}
+
+func (s *Server) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/auth/login", s.managerLogin)
 	mux.Handle("/api/admin/auth/me", s.requireRealm(model.RealmManager, http.HandlerFunc(s.managerMe)))
 	mux.Handle("/api/admin/", s.requireRealm(model.RealmManager, http.HandlerFunc(s.adminRoutes)))
-	var handler http.Handler = mux
-	handler = bodyLimitMiddleware(s.cfg.Limits.RequestBodyBytes, handler)
-	handler = loggingMiddleware(s.logger, handler)
-	handler = requestIDMiddleware(handler)
-	return handler
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

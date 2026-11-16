@@ -13,6 +13,10 @@ LICENSE
 **/dist
 **/build
 **/*.out
+**/*.tsbuildinfo
+hub-server/web
+hub-server/manager
+bin
 
 # 本地数据与日志
 *.db

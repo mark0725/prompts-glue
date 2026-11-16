@@ -28,6 +28,9 @@ func main() {
 			if err != nil {
 				return err
 			}
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
 			logger := newLogger(cfg.Logging.Level)
 			logger.Info("hub-server starting", "version", "0.1.0", "address", cfg.Server.Address, "driver", cfg.Database.Driver)
 			db, err := database.Open(cfg)

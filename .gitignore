@@ -24,8 +24,20 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Environment and secrets
 .env
+
+# Build outputs
+/bin/
+/hub-server/web/
+/hub-server/manager/
+**/node_modules/
+web/dist/
+manager/dist/
+**/*.tsbuildinfo
+
+# Local database bootstrap (may contain credentials)
+/db.sql
 
 # Editor/IDE
 # .idea/

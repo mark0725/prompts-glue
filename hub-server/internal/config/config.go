@@ -54,6 +54,8 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 
 type Config struct {
 	Server   ServerConfig   `yaml:"server" json:"server" toml:"server"`
+	Web      UIConfig       `yaml:"web" json:"web" toml:"web"`
+	Manager  UIConfig       `yaml:"manager" json:"manager" toml:"manager"`
 	Database DatabaseConfig `yaml:"database" json:"database" toml:"database"`
 	Auth     AuthConfig     `yaml:"auth" json:"auth" toml:"auth"`
 	LLM      LLMConfig      `yaml:"llm" json:"llm" toml:"llm"`
@@ -66,6 +68,14 @@ type Config struct {
 type ServerConfig struct {
 	Address       string `yaml:"address" json:"address" toml:"address"`
 	PublicBaseURL string `yaml:"public_base_url" json:"public_base_url" toml:"public_base_url"`
+}
+
+// UIConfig 描述一个前端托管端口的配置：是否启用、监听地址和静态产物目录。
+// web 与 manager 使用同一结构，分别对应用户端门户和管理界面。
+type UIConfig struct {
+	Enable  bool   `yaml:"enable" json:"enable" toml:"enable"`
+	Address string `yaml:"address" json:"address" toml:"address"`
+	Dir     string `yaml:"dir" json:"dir" toml:"dir"`
 }
 
 type DatabaseConfig struct {
@@ -129,6 +139,8 @@ type LDAPConfig struct {
 func Default() Config {
 	return Config{
 		Server:   ServerConfig{Address: ":8080"},
+		Web:      UIConfig{Enable: true, Address: ":8081", Dir: "web"},
+		Manager:  UIConfig{Enable: true, Address: ":8082", Dir: "manager"},
 		Database: DatabaseConfig{Driver: "sqlite", DSN: "hub-server.db"},
 		Auth:     AuthConfig{TokenTTL: Duration(24 * time.Hour), AdminUsername: "admin"},
 		Cache:    CacheConfig{DefaultStrategy: "VERSIONED", TTL: Duration(time.Hour)},
@@ -144,6 +156,34 @@ func Default() Config {
 			SyncInterval:         Duration(30 * time.Minute),
 		},
 	}
+}
+
+// Validate 校验监听地址与前端托管配置。静态目录是否存在在服务启动时检查，
+// 这里只校验必填项和端口是否冲突。
+func (c Config) Validate() error {
+	if strings.TrimSpace(c.Server.Address) == "" {
+		return fmt.Errorf("server.address is required")
+	}
+	addresses := map[string]string{"server.address": c.Server.Address}
+	for _, ui := range []struct {
+		name string
+		cfg  UIConfig
+	}{{"web", c.Web}, {"manager", c.Manager}} {
+		if !ui.cfg.Enable {
+			continue
+		}
+		if strings.TrimSpace(ui.cfg.Address) == "" {
+			return fmt.Errorf("%s.address is required when %s.enable is true", ui.name, ui.name)
+		}
+		if strings.TrimSpace(ui.cfg.Dir) == "" {
+			return fmt.Errorf("%s.dir is required when %s.enable is true", ui.name, ui.name)
+		}
+		if prev, ok := addresses[ui.cfg.Address]; ok {
+			return fmt.Errorf("%s.address %q conflicts with %s", ui.name, ui.cfg.Address, prev)
+		}
+		addresses[ui.cfg.Address] = ui.name + ".address"
+	}
+	return nil
 }
 
 // Load 按优先级 合并配置：代码默认值 < 配置文件 < 环境变量 < 命令行参数。

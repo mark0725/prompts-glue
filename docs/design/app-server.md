@@ -118,6 +118,12 @@ web 用户可在个人中心创建个人访问令牌（PAT），默认不过期�
 |---|---|
 | server.address | 服务监听地址 |
 | server.public_base_url | 对外访问基准地址 |
+| web.enable | 是否启用 Web 门户端口 |
+| web.address | Web 门户监听地址，默认 `:8081` |
+| web.dir | Web 构建产物目录，默认 `web` |
+| manager.enable | 是否启用管理界面端口 |
+| manager.address | 管理界面监听地址，默认 `:8082` |
+| manager.dir | 管理界面构建产物目录，默认 `manager` |
 | database.driver | 数据库驱动类型 |
 | database.dsn | 数据库连接字符串 |
 | auth.token_ttl | 访问令牌有效期 |
@@ -146,6 +152,8 @@ web 用户可在个人中心创建个人访问令牌（PAT），默认不过期�
 | ldap.sync_targets | 同步目标表列表，可选 `manager`、`web`；默认仅 `["manager"]`，含 `web` 时也同步到 web 用户表 |
 | ldap.sync_interval | 周期同步间隔，文本形式如 `30m`；不大于 0 时不启动周期同步 |
 
+`web.dir` 与 `manager.dir` 为相对路径时按进程工作目录解析；对应端口启用时必须存在可读取的 `index.html`，否则启动失败。
+
 > 引导管理员账号初始化到管理用户表（`manager_users`，来源 LOCAL、角色 ADMIN），通过 `auth.admin_username` / `auth.admin_password` 与管理端登录端点登录。
 
 ### 配置规范
@@ -162,13 +170,29 @@ web 用户可在个人中心创建个人访问令牌（PAT），默认不过期�
 
 敏感配置不得写入日志、错误详情和前端响应。
 
+## 前端托管
+
+hub-server 直接托管 Web 与 Manager 构建产物，不依赖 nginx 等反向代理。三个监听端口职责如下：
+
+| 端口 | 默认地址 | API 范围 | 静态内容 |
+|---|---|---|---|
+| API | `:8080` | 完整 API | 无 |
+| Web | `:8081` | Registry API + 字典 API | `web.dir` |
+| Manager | `:8082` | 完整 API | `manager.dir` |
+
+- Web 与 Manager 端口同源提供 API，前端统一使用相对路径 `/api`。
+- Web 端口不注册管理 API；管理 API 仅在 API 端口和 Manager 端口提供。
+- 非 API 路径命中静态文件时直接返回；未命中时回退 `index.html`，支持前端路由。
+- `/assets/*` 未命中返回 404，避免把 `index.html` 当作脚本或样式返回；命中时设置长期缓存，`index.html` 不缓存。
+- `web.enable` 或 `manager.enable` 为 `false` 时不监听对应端口，用于同镜像多容器拆分部署。
+
 ## 部署形态
 
 | 形态 | 说明 |
 |---|---|
-| 本地开发 | 后端服务连接 SQLite，Web 和 Manager 独立开发服务代理 API |
-| 单容器 | 后端服务托管静态前端产物，连接外部数据库 |
-| 多容器 | 后端、Web、Manager、数据库分开部署 |
+| 本地开发 | 后端服务连接 SQLite；Web 和 Manager 可使用 Vite 开发服务代理 API |
+| 单容器 | 一个 hub-server 进程同时监听 API、Web、Manager 端口，托管 `web`、`manager` 目录，连接外部数据库 |
+| 多容器（同镜像） | 使用同一镜像启动多个容器，通过 `web.enable` / `manager.enable` 只启用所需前端端口，各容器连接同一数据库 |
 | 生产环境 | 使用 MySQL 或 PostgreSQL，开启审计、限流、备份和健康检查 |
 
 ## 可观测性

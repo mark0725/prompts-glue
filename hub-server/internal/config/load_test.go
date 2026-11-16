@@ -24,6 +24,12 @@ func TestDefault(t *testing.T) {
 	if cfg.Cache.DefaultStrategy != "VERSIONED" {
 		t.Fatalf("cache.default_strategy default = %q", cfg.Cache.DefaultStrategy)
 	}
+	if !cfg.Web.Enable || cfg.Web.Address != ":8081" || cfg.Web.Dir != "web" {
+		t.Fatalf("web defaults = %+v", cfg.Web)
+	}
+	if !cfg.Manager.Enable || cfg.Manager.Address != ":8082" || cfg.Manager.Dir != "manager" {
+		t.Fatalf("manager defaults = %+v", cfg.Manager)
+	}
 }
 
 func writeFile(t *testing.T, name, content string) string {
@@ -103,6 +109,8 @@ func TestEnvOverride(t *testing.T) {
 	t.Setenv("HUB_AUTH__TOKEN_TTL", "15m")
 	t.Setenv("HUB_LIMITS__REQUEST_BODY_BYTES", "999")
 	t.Setenv("HUB_LIMITS__PAGE_SIZE_MAX", "7")
+	t.Setenv("HUB_WEB__ADDRESS", ":9081")
+	t.Setenv("HUB_MANAGER__ENABLE", "false")
 	cfg, err := Load("", nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -118,6 +126,34 @@ func TestEnvOverride(t *testing.T) {
 	}
 	if cfg.Limits.PageSizeMax != 7 {
 		t.Fatalf("limits.page_size_max = %d", cfg.Limits.PageSizeMax)
+	}
+	if cfg.Web.Address != ":9081" {
+		t.Fatalf("web.address = %q", cfg.Web.Address)
+	}
+	if cfg.Manager.Enable {
+		t.Fatal("expected manager.enable to be false")
+	}
+}
+
+func TestValidate(t *testing.T) {
+	cfg := Default()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid: %v", err)
+	}
+	cfg.Manager.Address = cfg.Web.Address
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected duplicate address error")
+	}
+	cfg = Default()
+	cfg.Web.Enable = false
+	cfg.Web.Dir = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("disabled web should ignore empty dir: %v", err)
+	}
+	cfg = Default()
+	cfg.Web.Dir = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected web.dir error")
 	}
 }
 
@@ -169,6 +205,8 @@ func TestNamingTable(t *testing.T) {
 		"limits.page_size_max":      {"HUB_LIMITS__PAGE_SIZE_MAX", "limits-page-size-max"},
 		"logging.level":             {"HUB_LOGGING__LEVEL", "logging-level"},
 		"server.public_base_url":    {"HUB_SERVER__PUBLIC_BASE_URL", "server-public-base-url"},
+		"web.address":               {"HUB_WEB__ADDRESS", "web-address"},
+		"manager.enable":            {"HUB_MANAGER__ENABLE", "manager-enable"},
 	}
 	got := map[string]fieldDesc{}
 	for _, d := range describe() {

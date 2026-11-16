@@ -23,7 +23,7 @@
 | Registry API | `/api/registry` | 包注册、搜索、下载、发布、依赖和生成 |
 | 字典 API | `/api/dicts` | 前端和客户端读取业务字典 |
 | 管理 API | `/api/admin` | 管理端用户、字典、配置、风险、审计等运营能力 |
-| 静态资源 | `/` | 可选托管 Web 和 Manager 构建产物 |
+| 静态资源 | `/` | 由 hub-server 的 Web/Manager 端口托管对应构建产物，未命中路径回退 `index.html` |
 
 ## 认证约定
 
