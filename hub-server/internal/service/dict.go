@@ -65,6 +65,8 @@ func DefaultDictItems() []model.DictItem {
 		{"prompt_category", "PRODUCT", "产品", "产品设计类提示词"},
 		{"prompt_category", "JOB", "职位", "职位或岗位类提示词"},
 		{"prompt_category", "OPS", "运维", "运维类提示词"},
+		{"prompt_category", "DOC", "文档", "文档类提示词"},
+		{"prompt_category", "DESIGN", "设计", "设计类提示词"},
 		{"version_status", "DRAFT", "草稿", "未发布"},
 		{"version_status", "PUBLISHED", "已发布", "可搜索、下载、安装和引用"},
 		{"version_status", "DEPRECATED", "已废弃", "不建议继续使用"},
